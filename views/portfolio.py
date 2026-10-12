@@ -2,12 +2,13 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from alerts import check_and_show_alerts
+from auth import get_current_user, load_portfolio, save_portfolio
 from chainintel_core import ASSETS, WORST_CASE
 from styles import PLOT_LAYOUT, card, empty_state, fmt_price, fmt_usd, risk_hex, section, status_pill
-from ui import header, page
+from ui import get_engine, header
 
-engine, _ = page("Portfolio", "💼")
-header("💼 Portfolio Risk", "Enter your stablecoin holdings to see expected loss and how you'd fare in a repeat of past crises")
+engine = get_engine()
+header("Portfolio", "Enter your stablecoin holdings to see expected loss and how you'd fare in a repeat of past crises")
 
 SCENARIOS = {
     "SVB replay (Mar 2023)": {"USDC": 0.877, "DAI": 0.897, "FRAX": 0.874},
@@ -17,13 +18,22 @@ SCENARIOS = {
 
 # ── Holdings ───────────────────────────────────────────────────────────────────
 st.markdown(section("Your holdings (USD face value)"), unsafe_allow_html=True)
+user = get_current_user()
+if "saved_holdings" not in st.session_state:
+    st.session_state.saved_holdings = load_portfolio(user["id"])
+saved = st.session_state.saved_holdings
+
 holdings = {}
 tickers = list(ASSETS)
 for row in (tickers[:5], tickers[5:]):
     cols = st.columns(5)
     for col, t in zip(cols, row):
         with col:
-            holdings[t] = float(st.number_input(t, min_value=0, value=0, step=1000, format="%d", key=f"hold_{t}"))
+            holdings[t] = float(st.number_input(t, min_value=0, value=int(saved.get(t, 0)), step=1000, format="%d", key=f"hold_{t}"))
+if holdings != {t: float(saved.get(t, 0)) for t in tickers}:
+    save_portfolio(user["id"], holdings)
+    st.session_state.saved_holdings = holdings
+st.caption("Saved to your account automatically.")
 
 total = sum(holdings.values())
 if total == 0:

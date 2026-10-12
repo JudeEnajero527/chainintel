@@ -284,8 +284,11 @@ class RiskEngine:
         with self._sentiment_lock:
             if self._sentiment_pipe is None and self.sentiment_status != "Offline":
                 try:
+                    import torch
+                    torch.classes.__path__ = []          # stops Streamlit's file watcher from tripping over torch.classes
                     from transformers import pipeline
-                    self._sentiment_pipe = pipeline("sentiment-analysis", model="ProsusAI/finbert")
+                    # CPU on purpose: calling a GPU/MPS pipeline from several threads can crash the process.
+                    self._sentiment_pipe = pipeline("sentiment-analysis", model="ProsusAI/finbert", device=-1)
                     self.sentiment_status = "Online"
                 except Exception as e:
                     log.warning("FinBERT unavailable: %s", e)
@@ -322,7 +325,8 @@ class RiskEngine:
         pipe = self._sentiment_model()
         if pipe is None:
             return {"score": None, "items": [dict(n, label="unscored") for n in news], "error": "sentiment model offline"}
-        results = pipe([n["title"] for n in news])
+        with self._sentiment_lock:                   # the pipeline isn't thread-safe; assess_all runs coins in parallel
+            results = pipe([n["title"] for n in news])
         risk = {"positive": 0, "neutral": 50, "negative": 100}
         items = [dict(n, label=r["label"], confidence=round(r["score"], 2)) for n, r in zip(news, results)]
         score = sum(risk.get(i["label"], 50) for i in items) / len(items)

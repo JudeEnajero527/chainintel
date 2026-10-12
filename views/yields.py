@@ -3,10 +3,11 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from styles import PLOT_LAYOUT, card, empty_state, esc, fmt_usd, section
-from ui import header, page
+from ui import get_engine, auto_refresh, header
 
-engine, _ = page("Yields", "💰", refresh_seconds=900)
-header("💰 Stablecoin Yields", "Every DefiLlama pool made up only of stablecoins — filter, sort, and sanity-check the APY")
+engine = get_engine()
+auto_refresh(900)
+header("Yields", "Every DefiLlama pool made up only of stablecoins — filter, sort, and sanity-check the APY")
 
 with st.spinner("Loading yield data…"):
     all_pools = engine.get_stablecoin_yields()
@@ -18,14 +19,15 @@ if not all_pools:
 df = pd.DataFrame(all_pools)
 df["reward_share"] = (df["apy_reward"] / df["apy"]).clip(0, 1).fillna(0)
 
-with st.sidebar:
-    st.markdown('<div class="section-title" style="margin:20px 0 8px;">Filters</div>', unsafe_allow_html=True)
-    min_tvl = st.select_slider("Min pool TVL", options=[100_000, 1_000_000, 5_000_000, 10_000_000, 50_000_000, 100_000_000],
+with st.container(border=True):
+    f1, f2, f3, f4 = st.columns([1.1, 1.2, 1.4, 1.2])
+    min_tvl = f1.select_slider("Min pool TVL", options=[100_000, 1_000_000, 5_000_000, 10_000_000, 50_000_000, 100_000_000],
                                value=5_000_000, format_func=lambda x: fmt_usd(x, 0))
-    min_apy, max_apy = st.slider("APY range (%)", 0.0, 50.0, (2.0, 30.0), 0.5)
-    chains = st.multiselect("Chains", sorted(df["chain"].unique(), key=lambda c: -df[df["chain"] == c]["tvl"].sum()))
-    query = st.text_input("Search symbol or protocol", placeholder="e.g. USDC, aave")
-    base_only = st.toggle("Base yield only (ignore token rewards)", value=False)
+    min_apy, max_apy = f2.slider("APY range (%)", 0.0, 50.0, (2.0, 30.0), 0.5)
+    chains = f3.multiselect("Chains", sorted(df["chain"].unique(), key=lambda c: -df[df["chain"] == c]["tvl"].sum()),
+                            placeholder="All chains")
+    query = f4.text_input("Search", placeholder="Symbol or protocol, e.g. USDC")
+    base_only = st.toggle("Rank by base yield only (ignore token rewards)", value=False)
 
 apy_col = "apy_base" if base_only else "apy"
 pools = df[(df["tvl"] >= min_tvl) & (df[apy_col] >= min_apy) & (df[apy_col] <= max_apy)]

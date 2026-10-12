@@ -1,18 +1,21 @@
 import streamlit as st
 
 from styles import card, empty_state, esc, fmt_age, fmt_usd, short_addr
-from ui import header, page
+from ui import get_engine, auto_refresh, asset_selector, header
 
-engine, ticker = page("Whale Alerts", "🐋", refresh_seconds=120, asset_picker=True)
+engine = get_engine()
+auto_refresh(120)
 
-with st.sidebar:
+header("Whale alerts", "Large on-chain stablecoin transfers on Ethereum")
+pick, size = st.columns([3, 1.3])
+with pick:
+    ticker = asset_selector()
+with size:
     threshold = st.select_slider("Minimum transfer", options=[250_000, 500_000, 1_000_000, 5_000_000, 10_000_000, 50_000_000],
-                                 value=1_000_000, format_func=fmt_usd)
-
-header("🐋 Whale Alerts", f"Large on-chain {ticker} transfers on Ethereum · minimum {fmt_usd(threshold, 0)}")
+                                 value=1_000_000, format_func=fmt_usd, label_visibility="collapsed")
 
 st.markdown("""
-<div class="banner">🔍 <strong style="color:#f1f5f9;">Why this matters:</strong> very large stablecoin transfers — especially
+<div class="banner"><strong>Why this matters:</strong> very large stablecoin transfers — especially
 into exchanges or redemption addresses — can signal holders heading for the exit. Most big transfers are routine
 (market makers, treasury moves), so treat these as context rather than a signal on their own.</div>
 """, unsafe_allow_html=True)
@@ -22,7 +25,7 @@ with st.spinner(f"Scanning recent {ticker} transfers…"):
 
 if res["error"]:
     st.markdown(empty_state("🔑", "Whale tracking is unavailable", esc(res["error"]) +
-                            "<br><br>Then restart the app with <code>ETHERSCAN_API_KEY=yourkey streamlit run Home.py</code>."),
+                            "<br><br>Add it to the <code>.env</code> file in the project folder (see Settings → Data sources) and restart the app."),
                 unsafe_allow_html=True)
     st.stop()
 

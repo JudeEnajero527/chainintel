@@ -26,20 +26,21 @@ def _persist():
 
 
 def render_alert_settings():
+    """Alert controls (Settings page). Saved to the account as soon as anything changes."""
     init_alerts()
-    with st.expander("🔔 Alert thresholds", expanded=False):
-        enabled = st.toggle("Alerts enabled", value=st.session_state.alerts_enabled, key="alert_toggle")
-        changed = enabled != st.session_state.alerts_enabled
-        st.session_state.alerts_enabled = enabled
-        if enabled:
-            st.caption("Alert when a coin's composite risk score reaches:")
-            for ticker in ASSETS:
+    enabled = st.toggle("Show alerts when a coin crosses its threshold", value=st.session_state.alerts_enabled, key="alert_toggle")
+    changed = enabled != st.session_state.alerts_enabled
+    st.session_state.alerts_enabled = enabled
+    if enabled:
+        cols = st.columns(3)
+        for i, ticker in enumerate(ASSETS):
+            with cols[i % 3]:
                 val = st.slider(ticker, 0, 100, st.session_state.alert_thresholds[ticker], step=5, key=f"thresh_{ticker}")
-                if val != st.session_state.alert_thresholds[ticker]:
-                    st.session_state.alert_thresholds[ticker] = val
-                    changed = True
-        if changed:
-            _persist()
+            if val != st.session_state.alert_thresholds[ticker]:
+                st.session_state.alert_thresholds[ticker] = val
+                changed = True
+    if changed:
+        _persist()
 
 
 def check_and_show_alerts(current_risks: dict):

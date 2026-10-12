@@ -4,10 +4,11 @@ import streamlit as st
 
 from chainintel_core import ASSETS
 from styles import PLOT_LAYOUT, empty_state, risk_hex, section
-from ui import header, page
+from ui import get_engine, auto_refresh, header
 
-engine, _ = page("Analytics", "📈", refresh_seconds=300)
-header("📈 Analytics", "Risk over time, and how tightly the stablecoins move together")
+engine = get_engine()
+auto_refresh(300)
+header("Analytics", "Risk over time, and how tightly the stablecoins move together")
 
 days = st.segmented_control("Window", [1, 7, 30, 90], default=7, format_func=lambda d: f"Last {d}d",
                             label_visibility="collapsed", key="analytics_window") or 7

@@ -4,10 +4,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from styles import PLOT_LAYOUT, card, empty_state, esc, fmt_age, fmt_usd, risk_bar_html, risk_hex, section
-from ui import header, page
+from ui import get_engine, auto_refresh, asset_selector, header
 
-engine, ticker = page("Social", "🌐", refresh_seconds=600, asset_picker=True)
-header("🌐 Social Intelligence", f"Search interest, Reddit chatter and on-chain trading pressure for {ticker}")
+engine = get_engine()
+auto_refresh(600)
+header("Social signals", "Search interest, Reddit chatter and on-chain trading pressure")
+ticker = asset_selector()
 
 with st.spinner("Gathering social and on-chain signals…"):
     trends = engine.get_google_trends(ticker)

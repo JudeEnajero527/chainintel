@@ -8,9 +8,11 @@ from alerts import check_and_show_alerts
 from chainintel_core import DEPEG_EVENTS
 from styles import (LEVEL_HEX, PLOT_LAYOUT, card, empty_state, esc, fmt_price, fmt_usd, risk_bar_html, risk_hex,
                     section, status_pill)
-from ui import header, page
+from ui import get_engine, auto_refresh, asset_selector, header
 
-engine, ticker = page("Monitor", "📡", refresh_seconds=60, asset_picker=True)
+engine = get_engine()
+auto_refresh(60)
+ticker = asset_selector()
 
 with st.spinner(f"Assessing {ticker}…"):
     a = engine.assess(ticker)
@@ -19,7 +21,7 @@ cfg, price, risk, ml, dex, sent = a["cfg"], a["price"], a["risk"], a["ml"], a["d
 check_and_show_alerts({ticker: risk["total"]})
 
 header(
-    f'{ticker} <span style="color:#475569;font-weight:400;font-size:22px;">/ USD</span>',
+    f'{ticker} <span style="color:var(--muted);font-weight:500;font-size:22px;">/ USD</span>',
     f"Issued by {esc(cfg['issuer'])}",
     f'{status_pill(risk["total"])}<div class="note" style="margin-top:6px;">Updated {datetime.now():%I:%M:%S %p} · refreshes every 60s</div>',
 )

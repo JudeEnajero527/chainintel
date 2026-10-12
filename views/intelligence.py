@@ -5,10 +5,11 @@ import streamlit as st
 
 from depeg_model import FEATURE_LABELS
 from styles import LEVEL_HEX, PLOT_LAYOUT, card, empty_state, esc, fmt_price, risk_hex, section, status_pill
-from ui import header, page
+from ui import get_engine, auto_refresh, header
 
-engine, _ = page("Intelligence", "🤖", refresh_seconds=300)
-header("🤖 Intelligence", "7-day depeg forecasts, and exactly how good the model is")
+engine = get_engine()
+auto_refresh(300)
+header("Depeg forecasts", "7-day depeg forecasts, and exactly how good the model is")
 
 meta = engine.model_meta
 m = meta.get("metrics", {})

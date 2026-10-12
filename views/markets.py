@@ -3,10 +3,11 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from styles import PLOT_LAYOUT, card, empty_state, esc, fmt_usd, section
-from ui import header, page
+from ui import get_engine, auto_refresh, header
 
-engine, _ = page("Markets", "🌍", refresh_seconds=600)
-header("🌍 Stablecoin Markets", "The 25 largest stablecoins by circulating supply")
+engine = get_engine()
+auto_refresh(600)
+header("Stablecoin markets", "The 25 largest stablecoins by circulating supply")
 
 with st.spinner("Loading market data…"):
     coins = engine.get_stablecoin_market_caps()

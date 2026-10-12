@@ -2,10 +2,11 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from styles import PLOT_LAYOUT, card, empty_state, esc, fmt_pct, fmt_usd, section
-from ui import header, page
+from ui import get_engine, auto_refresh, header
 
-engine, _ = page("DeFi", "🏦", refresh_seconds=600)
-header("🏦 DeFi Protocol Health", "Total value locked in the protocols stablecoins depend on")
+engine = get_engine()
+auto_refresh(600)
+header("DeFi protocols", "Total value locked in the protocols stablecoins depend on")
 
 with st.spinner("Loading protocol data…"):
     protocols = engine.get_defi_protocols()
