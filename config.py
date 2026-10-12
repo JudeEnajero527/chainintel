@@ -21,6 +21,10 @@ KEYS = {
     "CHAININTEL_APP_PASS":  "Gmail App Password (myaccount.google.com/apppasswords)",
     "CHAININTEL_URL":       "Public URL of the dashboard, used in email links",
     "CHAININTEL_DB":        "Path to the SQLite database (default: chainintel.db next to the code)",
+    "DATABASE_URL":         "Postgres connection string for hosting (overrides CHAININTEL_DB)",
+    "TELEGRAM_BOT_TOKEN":   "Telegram bot token for push alerts (@BotFather)",
+    "SMTP_HOST":            "SMTP server (default smtp.gmail.com)",
+    "SMTP_PORT":            "SMTP port (default 587)",
 }
 
 

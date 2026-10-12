@@ -11,7 +11,7 @@ Settings (environment variables, or put them in .env — see .env.example):
     CHAININTEL_URL        Public URL of the dashboard (default http://localhost:8501), used for links + unsubscribe
     ETHERSCAN_API_KEY     optional, enables gas data
 
-Run once daily via cron (settings are read from .env, so the crontab line stays short):
+The background collector (collector.py) sends this automatically once a day. To run it from cron instead:
     0 8 * * * cd /Users/jaysonenajero/chainintel2 && /usr/bin/python3 send_digest.py >> digest.log 2>&1
 """
 import argparse
@@ -19,25 +19,19 @@ import os
 import smtplib
 import sys
 from datetime import datetime, timezone
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.utils import formataddr, make_msgid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import config
+import mailer
 from auth import get_digest_recipients, init_user_db
 from chainintel_core import RiskEngine
 from styles import LEVEL_HEX, LEVEL_TEXT, esc, fmt_price
 
-SENDER_EMAIL = config.get("CHAININTEL_EMAIL")
-SENDER_PASS  = config.get("CHAININTEL_APP_PASS")
-APP_URL      = config.get("CHAININTEL_URL", "http://localhost:8501").rstrip("/")
-SMTP_HOST, SMTP_PORT = "smtp.gmail.com", 587
+APP_URL = mailer.app_url()
 
 
-def build_snapshot():
-    data = RiskEngine().assess_all()
+def build_snapshot(data: dict | None = None):
+    data = data or RiskEngine().assess_all()
     rows = []
     for t, d in data.items():
         rows.append({"ticker": t, "issuer": d["cfg"]["issuer"], "price": d["price"],
@@ -124,15 +118,10 @@ def build_text(rows, alerts, username, unsubscribe_url):
 
 def make_message(to_email, username, token, rows, alerts):
     unsubscribe_url = f"{APP_URL}/?unsubscribe={token}"
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"ChainIntel daily digest — {datetime.now(timezone.utc):%b %d}" + (f" · ⚠️ {len(alerts)} alert(s)" if alerts else "")
-    msg["From"] = formataddr(("ChainIntel", SENDER_EMAIL))
-    msg["To"] = to_email
-    msg["Message-ID"] = make_msgid(domain="chainintel.local")
-    msg["List-Unsubscribe"] = f"<{unsubscribe_url}>"
-    msg.attach(MIMEText(build_text(rows, alerts, username, unsubscribe_url), "plain", "utf-8"))
-    msg.attach(MIMEText(build_html(rows, alerts, username, unsubscribe_url), "html", "utf-8"))
-    return msg
+    subject = f"ChainIntel daily digest — {datetime.now(timezone.utc):%b %d}" + (f" · ⚠️ {len(alerts)} alert(s)" if alerts else "")
+    return mailer.build(to_email, subject, build_text(rows, alerts, username, unsubscribe_url),
+                        build_html(rows, alerts, username, unsubscribe_url),
+                        headers={"List-Unsubscribe": f"<{unsubscribe_url}>"})
 
 
 def main():
@@ -151,26 +140,29 @@ def main():
         print(f"Wrote {path}")
         return
 
-    if not SENDER_EMAIL or not SENDER_PASS:
+    if not mailer.is_configured():
         sys.exit("ERROR: set CHAININTEL_EMAIL and CHAININTEL_APP_PASS in .env (see .env.example).")
+    sent, total = send_all(rows, alerts, verbose=True)
+    print(f"\nDone. {sent}/{total} emails delivered." if total else "No opted-in users with a confirmed email address.")
+
+
+def send_all(rows, alerts, verbose=False) -> tuple[int, int]:
+    """Sends the digest to every opted-in, confirmed user over one SMTP connection. Returns (sent, recipients)."""
     users = get_digest_recipients()
     if not users:
-        print("No opted-in users.")
-        return
-
+        return 0, 0
     sent = 0
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as server:
-        server.starttls()
-        server.login(SENDER_EMAIL, SENDER_PASS)
+    with mailer.Mailer() as m:
         for u in users:
             try:
-                msg = make_message(u["email"], u["username"], u["unsubscribe_token"], rows, alerts)
-                server.sendmail(SENDER_EMAIL, [u["email"]], msg.as_string())
-                print(f"  ✓ {u['email']}")
+                m.send(make_message(u["email"], u["username"], u["unsubscribe_token"], rows, alerts))
                 sent += 1
+                if verbose:
+                    print(f"  ✓ {u['email']}")
             except smtplib.SMTPException as e:
-                print(f"  ✗ {u['email']}: {e}")
-    print(f"\nDone. {sent}/{len(users)} emails delivered.")
+                if verbose:
+                    print(f"  ✗ {u['email']}: {e}")
+    return sent, len(users)
 
 
 if __name__ == "__main__":

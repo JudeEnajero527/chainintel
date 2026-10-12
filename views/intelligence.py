@@ -125,6 +125,39 @@ with right:
                 'A coin can look calm today and still carry forecast risk if its recent history has been shaky.</div>',
                 unsafe_allow_html=True)
 
+# ── Live track record ──────────────────────────────────────────────────────────
+st.markdown(section("Live track record"), unsafe_allow_html=True)
+record = engine.forecast_record()
+done = record[record["outcome"].notna()]
+if done.empty:
+    pending = len(record)
+    st.markdown(empty_state("🗓️", "No forecasts have been scored yet",
+                            f"ChainIntel saves each coin's forecast once a day ({pending} saved so far) and scores it after its "
+                            "7-day window closes. Results appear here from then on. Keep the background collector running "
+                            "so a forecast is saved every day."), unsafe_allow_html=True)
+else:
+    y, p = done["outcome"].astype(int), done["probability"] / 100
+    alerts = p >= m["alert_threshold"]
+    t1, t2, t3, t4 = st.columns(4)
+    with t1:
+        st.markdown(card("Forecasts scored", f"{len(done):,}", f"{int(y.sum())} were followed by a depeg"), unsafe_allow_html=True)
+    with t2:
+        brier = float(((p - y) ** 2).mean())
+        st.markdown(card("Brier score", f"{brier:.3f}", f"lower is better · test period: {m['brier']:.3f}"), unsafe_allow_html=True)
+    with t3:
+        caught = f"{(alerts & (y == 1)).sum()}/{int(y.sum())}" if y.sum() else "—"
+        st.markdown(card("Depegs warned about", caught, f"forecast ≥{m['alert_threshold']*100:.0f}% beforehand"), unsafe_allow_html=True)
+    with t4:
+        false_alarms = int((alerts & (y == 0)).sum())
+        st.markdown(card("False alarms", str(false_alarms), f"of {int(alerts.sum())} warnings"), unsafe_allow_html=True)
+    show = done.head(40).assign(
+        Forecast=lambda d: d["probability"].map(lambda v: f"{v:.1f}%"),
+        Outcome=lambda d: d["outcome"].map({1: "🔴 Depegged", 0: "🟢 Held peg"}),
+        **{"Worst move": lambda d: (d["max_dev"] * 100).map(lambda v: f"{v:.2f}%")},
+    )[["date", "ticker", "Forecast", "Outcome", "Worst move"]].rename(columns={"date": "Forecast date", "ticker": "Coin"})
+    st.dataframe(show, hide_index=True, use_container_width=True)
+    st.caption("Each forecast is scored on whether the coin traded ≥1% off peg in the 7 days after it was made (DefiLlama daily prices).")
+
 # ── Scenario simulator ─────────────────────────────────────────────────────────
 st.markdown(section("Scenario simulator"), unsafe_allow_html=True)
 st.markdown('<div class="note" style="margin-bottom:12px;">Build a made-up 90-day price history and see what the model '

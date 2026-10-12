@@ -1,26 +1,24 @@
-"""User accounts: storage, password hashing, login wall, per-user preferences."""
+"""User accounts: storage, password hashing, login wall, password reset, email verification, preferences."""
 import hashlib
 import hmac
 import json
-import os
 import re
 import secrets
-import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 import streamlit.components.v1 as components
 
-import config
-
+import db
+import mailer
 from styles import esc
-
-DB_PATH = config.get("CHAININTEL_DB") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "chainintel.db")
 
 MIN_PASSWORD_LEN = 8
 MAX_FAILED_LOGINS = 5
 LOCKOUT = timedelta(minutes=15)
 SESSION_DAYS = 30
+RESET_TTL = timedelta(hours=1)
+VERIFY_TTL = timedelta(days=3)
 COOKIE_NAME = "chainintel_session"
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -37,28 +35,29 @@ _EXTRA_COLUMNS = {
     "unsubscribe_token": "TEXT",
     "alert_prefs":       "TEXT",
     "portfolio":         "TEXT",
+    "email_verified":    "INTEGER NOT NULL DEFAULT 0",
+    "notify_prefs":      "TEXT",
 }
 
 
-def _conn():
-    return sqlite3.connect(DB_PATH)
-
-
 def init_user_db():
-    with _conn() as conn:
-        conn.execute("""
+    with db.connect() as conn:
+        conn.execute(f"""
             CREATE TABLE IF NOT EXISTS users (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                id         {db.AUTO_ID},
                 username   TEXT    UNIQUE NOT NULL,
                 email      TEXT    UNIQUE NOT NULL,
                 password   TEXT    NOT NULL,
                 created    TEXT    NOT NULL,
                 last_login TEXT
             )""")
-        existing = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+        existing = db.columns(conn, "users")
         for col, ddl in _EXTRA_COLUMNS.items():
             if col not in existing:
                 conn.execute(f"ALTER TABLE users ADD COLUMN {col} {ddl}")
+                if col == "email_verified":
+                    # Accounts created before verification existed are trusted as-is.
+                    conn.execute("UPDATE users SET email_verified = 1")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 token_hash TEXT PRIMARY KEY,
@@ -66,7 +65,16 @@ def init_user_db():
                 created    TEXT NOT NULL,
                 expires    TEXT NOT NULL
             )""")
-        conn.execute("DELETE FROM sessions WHERE expires < ?", (_now().isoformat(),))
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS auth_tokens (
+                token_hash TEXT PRIMARY KEY,
+                user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                purpose    TEXT NOT NULL,
+                expires    TEXT NOT NULL
+            )""")
+        now = _now().isoformat()
+        conn.execute("DELETE FROM sessions WHERE expires < ?", (now,))
+        conn.execute("DELETE FROM auth_tokens WHERE expires < ?", (now,))
         for (uid,) in conn.execute("SELECT id FROM users WHERE unsubscribe_token IS NULL").fetchall():
             conn.execute("UPDATE users SET unsubscribe_token=? WHERE id=?", (secrets.token_urlsafe(24), uid))
 
@@ -93,11 +101,17 @@ def _check_password(password: str, stored: str) -> tuple[bool, bool]:
 
 # ── User ops ────────────────────────────────────────────────────────────────────
 
-_USER_COLS = "id, username, email, password, failed_logins, locked_until, digest_opt_in"
+_USER_COLS = "id, username, email, password, failed_logins, locked_until, digest_opt_in, email_verified"
 
 
 def _row_to_user(row):
-    return {"id": row[0], "username": row[1], "email": row[2], "digest_opt_in": bool(row[6])}
+    return {"id": row[0], "username": row[1], "email": row[2], "digest_opt_in": bool(row[6]), "email_verified": bool(row[7])}
+
+
+def get_user(user_id: int) -> dict | None:
+    with db.connect() as conn:
+        row = conn.execute(f"SELECT {_USER_COLS} FROM users WHERE id = ?", (user_id,)).fetchone()
+    return _row_to_user(row) if row else None
 
 
 def create_user(username: str, email: str, password: str, digest_opt_in: bool = True) -> tuple[bool, str]:
@@ -108,27 +122,28 @@ def create_user(username: str, email: str, password: str, digest_opt_in: bool = 
         return False, "Enter a valid email address."
     if len(password) < MIN_PASSWORD_LEN:
         return False, f"Password must be at least {MIN_PASSWORD_LEN} characters."
-    with _conn() as conn:
-        if conn.execute("SELECT 1 FROM users WHERE username = ? COLLATE NOCASE", (username,)).fetchone():
+    with db.connect() as conn:
+        if conn.execute("SELECT 1 FROM users WHERE lower(username) = lower(?)", (username,)).fetchone():
             return False, "That username is taken."
         if conn.execute("SELECT 1 FROM users WHERE email = ?", (email,)).fetchone():
             return False, "An account with that email already exists — try signing in."
-        try:
+    try:
+        with db.connect() as conn:
             conn.execute(
                 "INSERT INTO users (username, email, password, created, digest_opt_in, unsubscribe_token) VALUES (?,?,?,?,?,?)",
                 (username, email, hash_password(password), _now().isoformat(), int(digest_opt_in), secrets.token_urlsafe(24)),
             )
-        except sqlite3.IntegrityError:
-            return False, "That username or email is already registered."
+    except db.IntegrityError:
+        return False, "That username or email is already registered."
     return True, "Account created."
 
 
 def verify_user(identifier: str, password: str) -> tuple[dict | None, str]:
     """Sign in with username or email. Returns (user, "") or (None, error message)."""
     identifier = identifier.strip()
-    with _conn() as conn:
+    with db.connect() as conn:
         row = conn.execute(
-            f"SELECT {_USER_COLS} FROM users WHERE username = ? COLLATE NOCASE OR email = ?",
+            f"SELECT {_USER_COLS} FROM users WHERE lower(username) = lower(?) OR email = ?",
             (identifier, identifier.lower()),
         ).fetchone()
         if not row:
@@ -150,18 +165,98 @@ def verify_user(identifier: str, password: str) -> tuple[dict | None, str]:
             conn.execute("UPDATE users SET password=? WHERE id=?", (hash_password(password), uid))
     return _row_to_user(row), ""
 
-
-# ── Remember-me sessions ────────────────────────────────────────────────────────
-# The browser keeps a random token in a cookie; the database stores only its SHA-256,
-# so a leaked database can't be used to log in. Signing out deletes the row.
+# ── One-time tokens (password reset, email verification) ────────────────────────
 
 def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def _issue_token(user_id: int, purpose: str, ttl: timedelta) -> str:
+    token = secrets.token_urlsafe(32)
+    with db.connect() as conn:
+        conn.execute("DELETE FROM auth_tokens WHERE user_id = ? AND purpose = ?", (user_id, purpose))
+        conn.execute("INSERT INTO auth_tokens (token_hash, user_id, purpose, expires) VALUES (?,?,?,?)",
+                     (_token_hash(token), user_id, purpose, (_now() + ttl).isoformat()))
+    return token
+
+
+def _consume_token(token: str, purpose: str) -> int | None:
+    """Returns the user id for a valid, unexpired token and deletes it (single use)."""
+    if not token or len(token) > 128:
+        return None
+    with db.connect() as conn:
+        row = conn.execute("SELECT user_id, expires FROM auth_tokens WHERE token_hash = ? AND purpose = ?",
+                           (_token_hash(token), purpose)).fetchone()
+        if row:
+            conn.execute("DELETE FROM auth_tokens WHERE token_hash = ?", (_token_hash(token),))
+    if not row or datetime.fromisoformat(row[1]) < _now():
+        return None
+    return row[0]
+
+
+def peek_token(token: str, purpose: str) -> bool:
+    if not token or len(token) > 128:
+        return False
+    with db.connect() as conn:
+        row = conn.execute("SELECT expires FROM auth_tokens WHERE token_hash = ? AND purpose = ?",
+                           (_token_hash(token), purpose)).fetchone()
+    return bool(row) and datetime.fromisoformat(row[0]) > _now()
+
+
+def request_password_reset(email: str) -> str:
+    """Emails a 1-hour reset link if the address has an account. Same reply either way (no account probing)."""
+    reply = "If that email has an account, a reset link is on its way. It expires in 1 hour."
+    email = email.strip().lower()
+    if not mailer.is_configured():
+        return "Password reset by email isn't set up on this server yet — ask the administrator."
+    with db.connect() as conn:
+        row = conn.execute("SELECT id, username FROM users WHERE email = ?", (email,)).fetchone()
+    if row:
+        link = f"{mailer.app_url()}/?reset={_issue_token(row[0], 'reset', RESET_TTL)}"
+        mailer.send(email, "Reset your ChainIntel password",
+                    f"Hi {row[1]},\n\nReset your password here (valid for 1 hour):\n{link}\n\n"
+                    "If you didn't ask for this, you can ignore this email.")
+    return reply
+
+
+def reset_password(token: str, new: str) -> tuple[bool, str]:
+    if len(new) < MIN_PASSWORD_LEN:
+        return False, f"Password must be at least {MIN_PASSWORD_LEN} characters."
+    uid = _consume_token(token, "reset")
+    if not uid:
+        return False, "That reset link is invalid or has expired. Request a new one."
+    with db.connect() as conn:
+        conn.execute("UPDATE users SET password=?, failed_logins=0, locked_until=NULL WHERE id=?", (hash_password(new), uid))
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (uid,))
+    return True, "Password updated — sign in with your new password."
+
+
+def send_verification_email(user: dict) -> tuple[bool, str]:
+    if not mailer.is_configured():
+        return False, "Email isn't set up on this server yet."
+    link = f"{mailer.app_url()}/?verify={_issue_token(user['id'], 'verify', VERIFY_TTL)}"
+    return mailer.send(user["email"], "Confirm your ChainIntel email",
+                       f"Hi {user['username']},\n\nConfirm this address to receive the digest and alerts:\n{link}\n\n"
+                       "The link is valid for 3 days.")
+
+
+def verify_email(token: str) -> str | None:
+    """Marks the email as verified. Returns the address, or None if the token is invalid."""
+    uid = _consume_token(token, "verify")
+    if not uid:
+        return None
+    with db.connect() as conn:
+        conn.execute("UPDATE users SET email_verified = 1 WHERE id = ?", (uid,))
+        row = conn.execute("SELECT email FROM users WHERE id = ?", (uid,)).fetchone()
+    return row[0] if row else None
+
+# ── Remember-me sessions ────────────────────────────────────────────────────────
+# The browser keeps a random token in a cookie; the database stores only its SHA-256,
+# so a leaked database can't be used to log in. Signing out deletes the row.
+
 def create_session(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
-    with _conn() as conn:
+    with db.connect() as conn:
         conn.execute("INSERT INTO sessions (token_hash, user_id, created, expires) VALUES (?,?,?,?)",
                      (_token_hash(token), user_id, _now().isoformat(), (_now() + timedelta(days=SESSION_DAYS)).isoformat()))
     return token
@@ -170,7 +265,7 @@ def create_session(user_id: int) -> str:
 def user_from_session(token: str) -> dict | None:
     if not token or len(token) > 128:
         return None
-    with _conn() as conn:
+    with db.connect() as conn:
         row = conn.execute(
             f"SELECT {', '.join('u.' + c.strip() for c in _USER_COLS.split(','))}, s.expires "
             "FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?",
@@ -183,26 +278,28 @@ def user_from_session(token: str) -> dict | None:
 
 def delete_session(token: str):
     if token:
-        with _conn() as conn:
+        with db.connect() as conn:
             conn.execute("DELETE FROM sessions WHERE token_hash = ?", (_token_hash(token),))
 
 
 def delete_all_sessions(user_id: int):
-    with _conn() as conn:
+    with db.connect() as conn:
         conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
 
+# ── Preferences ─────────────────────────────────────────────────────────────────
 
 def get_digest_recipients() -> list[dict]:
-    with _conn() as conn:
+    """Opted-in users with a verified email address."""
+    with db.connect() as conn:
         rows = conn.execute(
-            "SELECT username, email, unsubscribe_token FROM users WHERE digest_opt_in = 1 ORDER BY created"
+            "SELECT username, email, unsubscribe_token FROM users WHERE digest_opt_in = 1 AND email_verified = 1 ORDER BY created"
         ).fetchall()
     return [{"username": r[0], "email": r[1], "unsubscribe_token": r[2]} for r in rows]
 
 
 def unsubscribe(token: str) -> str | None:
     """Turns off the digest for the account owning `token`. Returns its email, or None if the token is unknown."""
-    with _conn() as conn:
+    with db.connect() as conn:
         row = conn.execute("SELECT id, email FROM users WHERE unsubscribe_token = ?", (token,)).fetchone()
         if row:
             conn.execute("UPDATE users SET digest_opt_in = 0 WHERE id = ?", (row[0],))
@@ -210,36 +307,73 @@ def unsubscribe(token: str) -> str | None:
 
 
 def set_digest_opt_in(user_id: int, on: bool):
-    with _conn() as conn:
+    with db.connect() as conn:
         conn.execute("UPDATE users SET digest_opt_in = ? WHERE id = ?", (int(on), user_id))
 
 
-def load_alert_prefs(user_id: int) -> dict | None:
-    with _conn() as conn:
-        row = conn.execute("SELECT alert_prefs FROM users WHERE id = ?", (user_id,)).fetchone()
+def _load_json(column: str, user_id: int):
+    with db.connect() as conn:
+        row = conn.execute(f"SELECT {column} FROM users WHERE id = ?", (user_id,)).fetchone()
     return json.loads(row[0]) if row and row[0] else None
 
 
+def _save_json(column: str, user_id: int, value):
+    with db.connect() as conn:
+        conn.execute(f"UPDATE users SET {column} = ? WHERE id = ?", (json.dumps(value), user_id))
+
+
+def load_alert_prefs(user_id: int) -> dict | None:
+    return _load_json("alert_prefs", user_id)
+
+
 def save_alert_prefs(user_id: int, prefs: dict):
-    with _conn() as conn:
-        conn.execute("UPDATE users SET alert_prefs = ? WHERE id = ?", (json.dumps(prefs), user_id))
+    _save_json("alert_prefs", user_id, prefs)
+
 
 def load_portfolio(user_id: int) -> dict:
-    with _conn() as conn:
-        row = conn.execute("SELECT portfolio FROM users WHERE id = ?", (user_id,)).fetchone()
-    return json.loads(row[0]) if row and row[0] else {}
+    return _load_json("portfolio", user_id) or {}
 
 
 def save_portfolio(user_id: int, holdings: dict):
-    with _conn() as conn:
-        conn.execute("UPDATE users SET portfolio = ? WHERE id = ?", (json.dumps(holdings), user_id))
+    _save_json("portfolio", user_id, holdings)
+
+
+def load_notify_prefs(user_id: int) -> dict:
+    """Push-notification settings: {"email": bool, "discord_webhook": str, "telegram_chat_id": str}."""
+    return _load_json("notify_prefs", user_id) or {"email": False, "discord_webhook": "", "telegram_chat_id": ""}
+
+
+def save_notify_prefs(user_id: int, prefs: dict):
+    _save_json("notify_prefs", user_id, prefs)
+
+
+def alert_subscribers() -> list[dict]:
+    """Every user with alerts enabled and at least one push channel set up."""
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT id, username, email, email_verified, alert_prefs, notify_prefs FROM users WHERE notify_prefs IS NOT NULL"
+        ).fetchall()
+    subs = []
+    for uid, username, email, verified, alert_prefs, notify_prefs in rows:
+        alerts = json.loads(alert_prefs) if alert_prefs else {}
+        notify = json.loads(notify_prefs)
+        if not alerts.get("enabled", True):
+            continue
+        channels = {
+            "email": email if notify.get("email") and verified else "",
+            "discord": notify.get("discord_webhook", ""),
+            "telegram": notify.get("telegram_chat_id", ""),
+        }
+        if any(channels.values()):
+            subs.append({"id": uid, "username": username, "thresholds": alerts.get("thresholds", {}), "channels": channels})
+    return subs
 
 
 def change_password(user_id: int, current: str, new: str, keep_token: str | None = None) -> tuple[bool, str]:
     """Checks the current password, stores the new one, and signs out every other remembered device."""
     if len(new) < MIN_PASSWORD_LEN:
         return False, f"New password must be at least {MIN_PASSWORD_LEN} characters."
-    with _conn() as conn:
+    with db.connect() as conn:
         row = conn.execute("SELECT password FROM users WHERE id = ?", (user_id,)).fetchone()
         if not row or not _check_password(current, row[0])[0]:
             return False, "Current password is incorrect."
@@ -404,19 +538,64 @@ LEFT_PANEL = """
 """
 
 
-def _handle_unsubscribe():
-    token = st.query_params.get("unsubscribe")
-    if not token:
-        return
-    email = unsubscribe(token)
+def _centered_message(kind: str, text: str):
     st.markdown(AUTH_CSS, unsafe_allow_html=True)
     _, mid, _ = st.columns([1, 2, 1])
     with mid:
-        if email:
-            st.success(f"{email} has been unsubscribed from the ChainIntel daily digest.")
-        else:
-            st.error("That unsubscribe link is invalid or has already been used.")
+        st.markdown('<div class="auth-logo" style="margin-bottom:28px;">⬡ Chain<span>Intel</span></div>', unsafe_allow_html=True)
+        getattr(st, kind)(text)
+        if st.button("Continue to ChainIntel →"):
+            st.query_params.clear()
+            st.rerun()
     st.stop()
+
+
+def _handle_email_links():
+    """Links from emails: ?unsubscribe=…, ?verify=…, ?reset=…"""
+    params = st.query_params
+    if token := params.get("unsubscribe"):
+        email = unsubscribe(token)
+        _centered_message("success" if email else "error",
+                          f"{email} has been unsubscribed from the ChainIntel daily digest." if email
+                          else "That unsubscribe link is invalid or has already been used.")
+    if token := params.get("verify"):
+        email = verify_email(token)
+        if email and is_logged_in():
+            st.session_state["user"]["email_verified"] = True
+        _centered_message("success" if email else "error",
+                          f"Thanks — {email} is confirmed." if email else "That confirmation link is invalid or has expired.")
+    if token := params.get("reset"):
+        st.markdown(AUTH_CSS, unsafe_allow_html=True)
+        _, mid, _ = st.columns([1, 2, 1])
+        with mid:
+            st.markdown('<div class="auth-logo" style="margin-bottom:28px;">⬡ Chain<span>Intel</span></div>'
+                        '<div class="auth-form-title">Choose a new password</div>', unsafe_allow_html=True)
+            if st.session_state.get("_reset_done"):
+                st.success(st.session_state.pop("_reset_done"))
+                if st.button("Go to sign in →"):
+                    st.query_params.clear()
+                    st.rerun()
+            elif not peek_token(token, "reset"):
+                st.error("That reset link is invalid or has expired. Request a new one from the sign-in page.")
+                if st.button("Back to sign in"):
+                    st.query_params.clear()
+                    st.rerun()
+            else:
+                with st.form("reset_form"):
+                    new = st.text_input("New password", type="password", placeholder=f"at least {MIN_PASSWORD_LEN} characters")
+                    confirm = st.text_input("Confirm new password", type="password")
+                    submitted = st.form_submit_button("Set password →")
+                if submitted:
+                    if new != confirm:
+                        st.error("The passwords don't match.")
+                    else:
+                        ok, msg = reset_password(token, new)
+                        if ok:
+                            logout()
+                            st.session_state["_reset_done"] = msg
+                            st.rerun()
+                        st.error(msg)
+        st.stop()
 
 
 def render_auth_wall() -> bool:
@@ -424,8 +603,8 @@ def render_auth_wall() -> bool:
     if not st.session_state.get("_user_db_ready"):
         init_user_db()
         st.session_state["_user_db_ready"] = True
-    _handle_unsubscribe()
     restore_session()
+    _handle_email_links()
     if is_logged_in():
         st.session_state.pop("_signed_out", None)
         return True
@@ -456,6 +635,11 @@ def render_auth_wall() -> bool:
                         _sign_in(user, remember)
                         st.rerun()
                     st.error(err)
+            with st.expander("Forgot your password?"):
+                with st.form("forgot_form", clear_on_submit=True):
+                    email = st.text_input("Account email", placeholder="you@example.com")
+                    if st.form_submit_button("Email me a reset link"):
+                        st.info(request_password_reset(email) if EMAIL_RE.match(email.strip()) else "Enter a valid email address.")
         else:
             st.markdown('<div class="auth-form-title">Create your account</div><div class="auth-form-sub">Free · No credit card</div>', unsafe_allow_html=True)
             with st.form("signup_form"):
@@ -469,10 +653,12 @@ def render_auth_wall() -> bool:
                 ok, msg = create_user(username, email, password, digest)
                 if ok:
                     user, _ = verify_user(username, password)
+                    send_verification_email(user)        # no-op message if email isn't configured
                     _sign_in(user, remember)
                     st.rerun()
                 st.error(msg)
-            st.markdown('<div class="auth-small">You can turn the digest off any time from the sidebar or any email.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="auth-small">We\'ll email a link to confirm your address. '
+                        'You can turn the digest off any time in Settings or from any email.</div>', unsafe_allow_html=True)
 
         st.markdown(
             '<div class="auth-small" style="margin-top:28px;">'
@@ -480,11 +666,3 @@ def render_auth_wall() -> bool:
             unsafe_allow_html=True,
         )
     return False
-
-
-def signed_in_badge(user: dict) -> str:
-    return (
-        '<hr style="border:none;border-top:1px solid rgba(255,255,255,.06);margin:16px 0 12px;">'
-        '<div style="font-size:12px;color:#64748b;">Signed in as</div>'
-        f'<div style="font-size:13px;font-weight:700;color:#f9fafb;margin-bottom:10px;">{esc(user["username"])}</div>'
-    )

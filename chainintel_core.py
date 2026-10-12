@@ -11,7 +11,6 @@ import json
 import logging
 import math
 import os
-import sqlite3
 import threading
 import time
 import xml.etree.ElementTree as ET
@@ -24,12 +23,12 @@ import pandas as pd
 import requests
 
 import config
+import db
 import depeg_model
 
 log = logging.getLogger("chainintel")
 
 HERE       = os.path.dirname(os.path.abspath(__file__))
-DB_PATH    = config.get("CHAININTEL_DB") or os.path.join(HERE, "chainintel.db")
 MODEL_PATH = os.path.join(HERE, "chainintel_model.pkl")
 META_PATH  = os.path.join(HERE, "chainintel_model_meta.json")
 
@@ -150,6 +149,18 @@ def summarize_reddit(posts: list[dict], source: str) -> dict:
     return {"posts": posts[:10], "count_24h": len(last_day), "count_7d": len(posts), "buzz": round(buzz), "source": source}
 
 
+SNAPSHOT_MAX_AGE = 420        # seconds — the collector runs every 5 minutes
+
+
+def _jsonable(o):
+    """json.dumps fallback for numpy / pandas scalars."""
+    if hasattr(o, "item"):
+        return o.item()
+    if isinstance(o, (datetime, pd.Timestamp)):
+        return o.isoformat()
+    raise TypeError(f"not JSON serializable: {type(o)}")
+
+
 def _risk_level(score):
     if score is None:
         return "unknown"
@@ -179,21 +190,28 @@ class RiskEngine:
 
     # ── storage ────────────────────────────────────────────────────────────────
     def init_db(self):
-        with sqlite3.connect(DB_PATH) as conn:
+        with db.connect() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS risk_history (
-                    timestamp DATETIME, ticker TEXT, price REAL, liquidity REAL,
+                    timestamp TEXT, ticker TEXT, price REAL, liquidity REAL,
                     sentiment_score REAL, total_risk REAL
                 )""")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_risk_ticker_ts ON risk_history (ticker, timestamp)")
+            conn.execute(f"CREATE TABLE IF NOT EXISTS snapshots (id {db.AUTO_ID}, created TEXT NOT NULL, payload TEXT NOT NULL)")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS forecast_log (
+                    date TEXT NOT NULL, ticker TEXT NOT NULL, probability REAL, price REAL,
+                    level TEXT, outcome INTEGER, max_dev REAL, resolved_at TEXT,
+                    PRIMARY KEY (date, ticker)
+                )""")
 
     def log_snapshot(self, ticker, price, liquidity, sentiment, total_risk, min_gap_minutes=5):
         """Record a reading at most once every `min_gap_minutes` per ticker."""
         if price is None or total_risk is None:
             return
-        with sqlite3.connect(DB_PATH) as conn:
+        with db.connect() as conn:
             last = conn.execute("SELECT MAX(timestamp) FROM risk_history WHERE ticker=?", (ticker,)).fetchone()[0]
-            if last and datetime.now() - datetime.fromisoformat(last) < timedelta(minutes=min_gap_minutes):
+            if last and datetime.now() - datetime.fromisoformat(str(last)) < timedelta(minutes=min_gap_minutes):
                 return
             conn.execute(
                 "INSERT INTO risk_history (timestamp, ticker, price, liquidity, sentiment_score, total_risk) VALUES (?,?,?,?,?,?)",
@@ -205,12 +223,73 @@ class RiskEngine:
         if days:
             query += " AND timestamp >= ?"
             params.append((datetime.now() - timedelta(days=days)).isoformat(sep=" "))
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query + " ORDER BY timestamp", conn, params=params)
+        with db.connect() as conn:
+            rows = conn.execute(query + " ORDER BY timestamp", params).fetchall()
+        df = pd.DataFrame(rows, columns=["timestamp", "price", "liquidity", "sentiment_score", "total_risk"])
         if not df.empty:
             df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601")
             df = df.set_index("timestamp")
         return df
+
+    # ── shared snapshots (collector ↔ app) ─────────────────────────────────────
+    def save_snapshot(self, data: dict):
+        with db.connect() as conn:
+            conn.execute("INSERT INTO snapshots (created, payload) VALUES (?, ?)",
+                         (datetime.now(timezone.utc).isoformat(), json.dumps(data, default=_jsonable)))
+            conn.execute("DELETE FROM snapshots WHERE created < ?",
+                         ((datetime.now(timezone.utc) - timedelta(days=2)).isoformat(),))
+
+    def load_snapshot(self, max_age_seconds: int) -> dict | None:
+        with db.connect() as conn:
+            row = conn.execute("SELECT created, payload FROM snapshots ORDER BY id DESC LIMIT 1").fetchone()
+        if not row or datetime.now(timezone.utc) - datetime.fromisoformat(row[0]) > timedelta(seconds=max_age_seconds):
+            return None
+        return json.loads(row[1])
+
+    # ── forecast track record ──────────────────────────────────────────────────
+    def log_forecasts(self, data: dict) -> int:
+        """Store today's 7-day forecast for each coin (first one of the UTC day wins). Returns rows added."""
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        added = 0
+        with db.connect() as conn:
+            for t, d in data.items():
+                ml = d["ml"]
+                if ml.get("probability") is None:
+                    continue
+                if conn.execute("SELECT 1 FROM forecast_log WHERE date=? AND ticker=?", (today, t)).fetchone():
+                    continue
+                conn.execute("INSERT INTO forecast_log (date, ticker, probability, price, level) VALUES (?,?,?,?,?)",
+                             (today, t, ml["probability"], d["price"], ml["level"]))
+                added += 1
+        return added
+
+    def resolve_forecasts(self) -> int:
+        """Score forecasts whose 7-day window has closed against DefiLlama daily prices. Returns rows resolved."""
+        horizon = depeg_model.HORIZON_DAYS
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=horizon + 1)).strftime("%Y-%m-%d")
+        with db.connect() as conn:
+            pending = conn.execute("SELECT date, ticker FROM forecast_log WHERE outcome IS NULL AND date <= ?", (cutoff,)).fetchall()
+        resolved = 0
+        for date, ticker in pending:
+            prices = self.get_daily_prices(ticker)
+            if prices is None:
+                continue
+            start = pd.Timestamp(date) + pd.Timedelta(days=1)
+            window = prices[(prices.index >= start) & (prices.index < start + pd.Timedelta(days=horizon))]
+            if len(window) < horizon - 1:          # tolerate one missing day
+                continue
+            max_dev = float((window - 1).abs().max())
+            with db.connect() as conn:
+                conn.execute("UPDATE forecast_log SET outcome=?, max_dev=?, resolved_at=? WHERE date=? AND ticker=?",
+                             (int(max_dev >= depeg_model.DEPEG_THRESHOLD), max_dev,
+                              datetime.now(timezone.utc).isoformat(), date, ticker))
+            resolved += 1
+        return resolved
+
+    def forecast_record(self) -> pd.DataFrame:
+        with db.connect() as conn:
+            rows = conn.execute("SELECT date, ticker, probability, price, level, outcome, max_dev FROM forecast_log ORDER BY date DESC, ticker").fetchall()
+        return pd.DataFrame(rows, columns=["date", "ticker", "probability", "price", "level", "outcome", "max_dev"])
 
     # ── prices ─────────────────────────────────────────────────────────────────
     @ttl_cache(60)
@@ -369,18 +448,28 @@ class RiskEngine:
         return {
             "ticker": ticker, "cfg": ASSETS[ticker], "price": price, "dex": dex, "liquidity": liquidity,
             "sentiment": sent, "risk": risk, "level": _risk_level(risk["total"]), "ml": ml,
+            "assessed_at": datetime.now(timezone.utc).isoformat(),
         }
 
     @ttl_cache(300, failure_seconds=300)
-    def assess_all(self, with_sentiment=True) -> dict:
-        """Assess every asset in parallel. Shared (and cached) across pages so scores always agree."""
+    def assess_all(self, with_sentiment=True, fresh=False) -> dict:
+        """
+        Assess every asset. Reuses a snapshot saved in the last few minutes (by the background collector or
+        another visitor) so pages load instantly; otherwise computes live, in parallel, and saves one.
+        """
+        if with_sentiment and not fresh:
+            snap = self.load_snapshot(max_age_seconds=SNAPSHOT_MAX_AGE)
+            if snap and set(snap) == set(ASSETS):
+                return snap
         self.get_all_prices()
         self._llama_history()
         if with_sentiment:
             self._sentiment_model()          # load once before the threads race for it
         with ThreadPoolExecutor(max_workers=len(ASSETS)) as pool:
-            results = pool.map(lambda t: self.assess(t, with_sentiment), ASSETS)
-        return dict(zip(ASSETS, results))
+            results = dict(zip(ASSETS, pool.map(lambda t: self.assess(t, with_sentiment), ASSETS)))
+        if with_sentiment and all(r["price"] is not None for r in results.values()):
+            self.save_snapshot(results)
+        return results
 
     # ── whales ─────────────────────────────────────────────────────────────────
     @ttl_cache(120)

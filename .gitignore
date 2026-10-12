@@ -8,3 +8,5 @@ venv/
 .env
 .streamlit/secrets.toml
 digest.log
+.collector.lock
+collector.log

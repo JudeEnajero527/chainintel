@@ -15,7 +15,7 @@ auto_refresh(60)
 ticker = asset_selector()
 
 with st.spinner(f"Assessing {ticker}…"):
-    a = engine.assess(ticker)
+    a = engine.assess_all()[ticker]
 cfg, price, risk, ml, dex, sent = a["cfg"], a["price"], a["risk"], a["ml"], a["dex"], a["sentiment"]
 
 check_and_show_alerts({ticker: risk["total"]})
