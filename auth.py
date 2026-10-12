@@ -9,6 +9,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 import config
 
@@ -19,6 +20,8 @@ DB_PATH = config.get("CHAININTEL_DB") or os.path.join(os.path.dirname(os.path.ab
 MIN_PASSWORD_LEN = 8
 MAX_FAILED_LOGINS = 5
 LOCKOUT = timedelta(minutes=15)
+SESSION_DAYS = 30
+COOKIE_NAME = "chainintel_session"
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -33,6 +36,7 @@ _EXTRA_COLUMNS = {
     "digest_opt_in":     "INTEGER NOT NULL DEFAULT 1",
     "unsubscribe_token": "TEXT",
     "alert_prefs":       "TEXT",
+    "portfolio":         "TEXT",
 }
 
 
@@ -55,6 +59,14 @@ def init_user_db():
         for col, ddl in _EXTRA_COLUMNS.items():
             if col not in existing:
                 conn.execute(f"ALTER TABLE users ADD COLUMN {col} {ddl}")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                token_hash TEXT PRIMARY KEY,
+                user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                created    TEXT NOT NULL,
+                expires    TEXT NOT NULL
+            )""")
+        conn.execute("DELETE FROM sessions WHERE expires < ?", (_now().isoformat(),))
         for (uid,) in conn.execute("SELECT id FROM users WHERE unsubscribe_token IS NULL").fetchall():
             conn.execute("UPDATE users SET unsubscribe_token=? WHERE id=?", (secrets.token_urlsafe(24), uid))
 
@@ -139,6 +151,47 @@ def verify_user(identifier: str, password: str) -> tuple[dict | None, str]:
     return _row_to_user(row), ""
 
 
+# ── Remember-me sessions ────────────────────────────────────────────────────────
+# The browser keeps a random token in a cookie; the database stores only its SHA-256,
+# so a leaked database can't be used to log in. Signing out deletes the row.
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def create_session(user_id: int) -> str:
+    token = secrets.token_urlsafe(32)
+    with _conn() as conn:
+        conn.execute("INSERT INTO sessions (token_hash, user_id, created, expires) VALUES (?,?,?,?)",
+                     (_token_hash(token), user_id, _now().isoformat(), (_now() + timedelta(days=SESSION_DAYS)).isoformat()))
+    return token
+
+
+def user_from_session(token: str) -> dict | None:
+    if not token or len(token) > 128:
+        return None
+    with _conn() as conn:
+        row = conn.execute(
+            f"SELECT {', '.join('u.' + c.strip() for c in _USER_COLS.split(','))}, s.expires "
+            "FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?",
+            (_token_hash(token),),
+        ).fetchone()
+    if not row or datetime.fromisoformat(row[-1]) < _now():
+        return None
+    return _row_to_user(row)
+
+
+def delete_session(token: str):
+    if token:
+        with _conn() as conn:
+            conn.execute("DELETE FROM sessions WHERE token_hash = ?", (_token_hash(token),))
+
+
+def delete_all_sessions(user_id: int):
+    with _conn() as conn:
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+
+
 def get_digest_recipients() -> list[dict]:
     with _conn() as conn:
         rows = conn.execute(
@@ -171,6 +224,32 @@ def save_alert_prefs(user_id: int, prefs: dict):
     with _conn() as conn:
         conn.execute("UPDATE users SET alert_prefs = ? WHERE id = ?", (json.dumps(prefs), user_id))
 
+def load_portfolio(user_id: int) -> dict:
+    with _conn() as conn:
+        row = conn.execute("SELECT portfolio FROM users WHERE id = ?", (user_id,)).fetchone()
+    return json.loads(row[0]) if row and row[0] else {}
+
+
+def save_portfolio(user_id: int, holdings: dict):
+    with _conn() as conn:
+        conn.execute("UPDATE users SET portfolio = ? WHERE id = ?", (json.dumps(holdings), user_id))
+
+
+def change_password(user_id: int, current: str, new: str, keep_token: str | None = None) -> tuple[bool, str]:
+    """Checks the current password, stores the new one, and signs out every other remembered device."""
+    if len(new) < MIN_PASSWORD_LEN:
+        return False, f"New password must be at least {MIN_PASSWORD_LEN} characters."
+    with _conn() as conn:
+        row = conn.execute("SELECT password FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not row or not _check_password(current, row[0])[0]:
+            return False, "Current password is incorrect."
+        conn.execute("UPDATE users SET password = ? WHERE id = ?", (hash_password(new), user_id))
+        if keep_token:
+            conn.execute("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?", (user_id, _token_hash(keep_token)))
+        else:
+            conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    return True, "Password updated. Other devices have been signed out."
+
 # ── Session helpers ─────────────────────────────────────────────────────────────
 
 def is_logged_in() -> bool:
@@ -181,9 +260,53 @@ def get_current_user() -> dict | None:
     return st.session_state.get("user")
 
 
-def logout():
-    for key in ("user", "alert_thresholds", "alerts_enabled"):
+def _sign_in(user: dict, remember: bool):
+    st.session_state["user"] = user
+    if remember:
+        token = create_session(user["id"])
+        st.session_state["_session_token"] = token
+        st.session_state["_cookie_action"] = ("set", token)
+
+
+def logout(everywhere: bool = False):
+    user = st.session_state.get("user")
+    if everywhere and user:
+        delete_all_sessions(user["id"])
+    delete_session(st.session_state.get("_session_token") or st.context.cookies.get(COOKIE_NAME))
+    for key in ("user", "alert_thresholds", "alerts_enabled", "_session_token"):
         st.session_state.pop(key, None)
+    st.session_state["_cookie_action"] = ("clear", None)
+    st.session_state["_signed_out"] = True      # this tab's request still carries the old cookie; ignore it
+
+
+def restore_session():
+    """Signs the visitor back in from their remember-me cookie, if it's still valid."""
+    if is_logged_in() or st.session_state.get("_signed_out"):
+        return
+    token = st.context.cookies.get(COOKIE_NAME)
+    user = user_from_session(token) if token else None
+    if user:
+        st.session_state["user"] = user
+        st.session_state["_session_token"] = token
+
+
+def apply_cookie_action():
+    """Writes or clears the session cookie in the browser. Must run after a rerun so the element survives."""
+    action = st.session_state.pop("_cookie_action", None)
+    if not action:
+        return
+    kind, token = action
+    if kind == "set":
+        value = f"{COOKIE_NAME}={token}; path=/; max-age={SESSION_DAYS * 86400}; SameSite=Lax"
+    else:
+        value = f"{COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax"
+    components.html(
+        "<script>"
+        f"const c = {json.dumps(value)} + (window.parent.location.protocol === 'https:' ? '; Secure' : '');"
+        "window.parent.document.cookie = c;"
+        "</script>",
+        height=0,
+    )
 
 # ── Login wall UI ───────────────────────────────────────────────────────────────
 
@@ -302,8 +425,11 @@ def render_auth_wall() -> bool:
         init_user_db()
         st.session_state["_user_db_ready"] = True
     _handle_unsubscribe()
+    restore_session()
     if is_logged_in():
+        st.session_state.pop("_signed_out", None)
         return True
+    apply_cookie_action()
 
     st.markdown(AUTH_CSS, unsafe_allow_html=True)
     left, right = st.columns([1, 1])
@@ -319,6 +445,7 @@ def render_auth_wall() -> bool:
             with st.form("login_form"):
                 ident = st.text_input("Username or email", placeholder="your_username")
                 password = st.text_input("Password", type="password", placeholder="••••••••")
+                remember = st.checkbox(f"Keep me signed in for {SESSION_DAYS} days", value=True)
                 submitted = st.form_submit_button("Sign in →")
             if submitted:
                 if not ident or not password:
@@ -326,7 +453,7 @@ def render_auth_wall() -> bool:
                 else:
                     user, err = verify_user(ident, password)
                     if user:
-                        st.session_state["user"] = user
+                        _sign_in(user, remember)
                         st.rerun()
                     st.error(err)
         else:
@@ -336,12 +463,13 @@ def render_auth_wall() -> bool:
                 email = st.text_input("Email", placeholder="you@example.com")
                 password = st.text_input("Password", type="password", placeholder=f"at least {MIN_PASSWORD_LEN} characters")
                 digest = st.checkbox("Email me the daily risk digest", value=True)
+                remember = st.checkbox(f"Keep me signed in for {SESSION_DAYS} days", value=True)
                 submitted = st.form_submit_button("Create account →")
             if submitted:
                 ok, msg = create_user(username, email, password, digest)
                 if ok:
                     user, _ = verify_user(username, password)
-                    st.session_state["user"] = user
+                    _sign_in(user, remember)
                     st.rerun()
                 st.error(msg)
             st.markdown('<div class="auth-small">You can turn the digest off any time from the sidebar or any email.</div>', unsafe_allow_html=True)
