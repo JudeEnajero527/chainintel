@@ -1,0 +1,160 @@
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
+
+from depeg_model import FEATURE_LABELS
+from styles import LEVEL_HEX, PLOT_LAYOUT, card, empty_state, esc, fmt_price, risk_hex, section, status_pill
+from ui import header, page
+
+engine, _ = page("Intelligence", "🤖", refresh_seconds=300)
+header("🤖 Intelligence", "7-day depeg forecasts, and exactly how good the model is")
+
+meta = engine.model_meta
+m = meta.get("metrics", {})
+if engine.model is None:
+    st.markdown(empty_state("🤖", "Depeg model not trained", "Run <code>python3 train_model.py</code> (takes about a minute)."),
+                unsafe_allow_html=True)
+    st.stop()
+
+with st.spinner("Scoring all assets…"):
+    data = engine.assess_all()
+
+# ── Forecast cards ─────────────────────────────────────────────────────────────
+st.markdown(section(f"Probability of a ≥{meta['depeg_threshold']:.0%} depeg in the next {meta['horizon_days']} days"),
+            unsafe_allow_html=True)
+
+
+def forecast_card(t, d):
+    ml = d["ml"]
+    color = LEVEL_HEX[ml["level"]]
+    prob = f"{ml['probability']:.1f}%" if ml["probability"] is not None else "—"
+    f = ml.get("features") or {}
+    drivers = ""
+    if f:
+        drivers = (f"30d volatility {f['vol_30d']*100:.3f}% · off-peg days (30d) {f['offpeg_days_30d']:.0f} · "
+                   f"worst 7d deviation {f['max_abs_dev_7d']*100:.2f}%")
+    return f"""
+    <div class="card" style="border-color:{color}33;padding:18px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:16px;font-weight:800;color:#f1f5f9;">{t}</div>
+        {status_pill(level=ml['level'], text=ml['label'])}
+      </div>
+      <div style="font-size:34px;font-weight:900;color:{color};letter-spacing:-1.5px;margin:10px 0 2px;">{prob}</div>
+      <div class="note">price {fmt_price(d['price'])}</div>
+      <div class="note" style="margin-top:8px;">{drivers}</div>
+    </div>"""
+
+
+tickers = list(data)
+for row in (tickers[:5], tickers[5:]):
+    cols = st.columns(5)
+    for col, t in zip(cols, row):
+        with col:
+            st.markdown(forecast_card(t, data[t]), unsafe_allow_html=True)
+
+# ── Model report card ──────────────────────────────────────────────────────────
+st.markdown(section("Model report card"), unsafe_allow_html=True)
+st.markdown(f"""
+<div class="banner">
+  <strong style="color:#f1f5f9;">The question:</strong> {esc(meta['question'])}<br>
+  <strong style="color:#f1f5f9;">Trained on:</strong> {meta['coins']} USD stablecoins, {meta['data_start']} → {meta['data_end']}
+  ({meta['training_rows']:,} coin-days), including every coin DefiLlama tracks — not only the nine above — so the model has seen
+  hundreds of real depeg episodes.<br>
+  <strong style="color:#f1f5f9;">Tested on:</strong> {m['test_start']} → {m['test_end']} — data the model never saw during training
+  ({m['test_rows']:,} coin-days, {m['test_positives']:,} of which were followed by a depeg).
+</div>""", unsafe_allow_html=True)
+
+k1, k2, k3, k4 = st.columns(4)
+with k1:
+    st.markdown(card("PR-AUC (main score)", f"{m['pr_auc']:.2f}",
+                     f"Naive rule: {m['pr_auc_baseline']:.2f} · random guess: {m['prevalence']:.2f}", color="#a78bfa"),
+                unsafe_allow_html=True)
+with k2:
+    st.markdown(card("Depegs caught", f"{m['recall_at_alert']*100:.0f}%",
+                     f"of real depegs got a ≥{m['alert_threshold']*100:.0f}% warning beforehand", color="#22c55e"),
+                unsafe_allow_html=True)
+with k3:
+    st.markdown(card("Warnings that were right", f"{m['precision_at_alert']*100:.0f}%",
+                     f"of ≥{m['alert_threshold']*100:.0f}% warnings were followed by a depeg", color="#f59e0b"),
+                unsafe_allow_html=True)
+with k4:
+    st.markdown(card("ROC-AUC", f"{m['roc_auc']:.2f}", f"Brier score {m['brier']:.3f} (probabilities are calibrated)"),
+                unsafe_allow_html=True)
+
+st.markdown('<div class="note">PR-AUC is the honest headline number for rare events: it measures how well the model ranks '
+            'coins that will depeg above those that won\'t, and doesn\'t get inflated by the many calm days. '
+            f'Retrain any time with <code>python3 train_model.py</code> (last trained {esc(meta["trained_at"])}).</div>',
+            unsafe_allow_html=True)
+
+left, right = st.columns([1, 1])
+with left:
+    st.markdown(section("What the model pays attention to"), unsafe_allow_html=True)
+    imp = meta.get("importance", {})
+    names = [FEATURE_LABELS.get(k, k) for k in imp][::-1]
+    vals = list(imp.values())[::-1]
+    with st.container(border=True):
+        fig = go.Figure(go.Bar(x=vals, y=names, orientation="h",
+                               marker=dict(color=["#3b82f6" if v > 0.02 else "#1e3a5f" for v in vals])))
+        fig.update_layout(**PLOT_LAYOUT, height=340)
+        fig.update_xaxes(title="Importance (PR-AUC drop when shuffled)")
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+with right:
+    st.markdown(section("Composite risk vs. ML forecast"), unsafe_allow_html=True)
+    pts = [(t, d["risk"]["total"], d["ml"]["probability"]) for t, d in data.items()
+           if d["risk"]["total"] is not None and d["ml"]["probability"] is not None]
+    with st.container(border=True):
+        if pts:
+            fig = go.Figure(go.Scatter(
+                x=[p[1] for p in pts], y=[p[2] for p in pts], mode="markers+text",
+                text=[p[0] if p[1] >= 30 or p[2] >= 10 else "" for p in pts], customdata=[p[0] for p in pts],
+                textposition="top center", textfont=dict(color="#f1f5f9", size=12),
+                marker=dict(size=16, color=[risk_hex(p[1]) for p in pts], line=dict(color="#0d0f14", width=2)),
+                hovertemplate="%{customdata}<br>Risk %{x:.1f}<br>Depeg prob %{y:.1f}%<extra></extra>",
+            ))
+            fig.update_layout(**PLOT_LAYOUT, height=340)
+            fig.update_xaxes(title="Composite risk score (today)", range=[0, 100])
+            fig.update_yaxes(title="7-day depeg probability (%)", rangemode="tozero")
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.markdown(empty_state("📉", "Nothing to plot", "No asset has both a risk score and a forecast."),
+                        unsafe_allow_html=True)
+    st.markdown('<div class="note">Hover a dot for its name; only coins with notable risk are labelled. The composite score describes <em>today</em>; the forecast estimates the <em>next week</em>. '
+                'A coin can look calm today and still carry forecast risk if its recent history has been shaky.</div>',
+                unsafe_allow_html=True)
+
+# ── Scenario simulator ─────────────────────────────────────────────────────────
+st.markdown(section("Scenario simulator"), unsafe_allow_html=True)
+st.markdown('<div class="note" style="margin-bottom:12px;">Build a made-up 90-day price history and see what the model '
+            'predicts. Useful for building intuition about which patterns it treats as warning signs.</div>',
+            unsafe_allow_html=True)
+
+s1, s2, s3 = st.columns(3)
+with s1:
+    sim_price = st.slider("Price today ($)", 0.9950, 1.0050, 0.9990, 0.0005, format="%.4f")
+with s2:
+    sim_vol = st.slider("Daily price noise over the last 30 days (%)", 0.00, 0.50, 0.05, 0.01, format="%.2f")
+with s3:
+    sim_wobbles = st.slider("Days ≥0.5% off peg in the last 30", 0, 10, 0)
+
+rng = np.random.default_rng(7)
+idx = pd.date_range(end=pd.Timestamp.today().normalize(), periods=90, freq="D")
+series = 1 + rng.normal(0, 0.0003, 90)                              # calm first 60 days
+series[-30:] = 1 + rng.normal(0, sim_vol / 100, 30)
+for k in rng.choice(np.arange(60, 88), size=sim_wobbles, replace=False):
+    series[k] = 1 - 0.006 - rng.uniform(0, 0.004)                   # brief dips below the 0.5% band
+series[-1] = sim_price
+sim = engine.predict_from_prices(pd.Series(series, index=idx))
+
+o1, o2 = st.columns([1, 2])
+with o1:
+    prob = sim["probability"]
+    st.markdown(card("Model output", f"{prob:.1f}%" if prob is not None else "—", esc(sim["label"]),
+                     color=LEVEL_HEX[sim["level"]], border=LEVEL_HEX[sim["level"]]), unsafe_allow_html=True)
+with o2, st.container(border=True):
+    fig = go.Figure(go.Scatter(x=idx, y=series, mode="lines", line=dict(color="#a78bfa", width=1.5)))
+    fig.add_hrect(y0=0.995, y1=1.005, fillcolor="rgba(34,197,94,.06)", line_width=0)
+    fig.update_layout(**PLOT_LAYOUT, height=170)
+    fig.update_yaxes(tickformat="$.3f")
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})

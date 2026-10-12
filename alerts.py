@@ -1,0 +1,63 @@
+"""Per-user risk alerts. Thresholds are saved to the user's account, so they survive sign-out."""
+import streamlit as st
+
+from auth import get_current_user, load_alert_prefs, save_alert_prefs
+from chainintel_core import ASSETS
+from styles import esc
+
+DEFAULT_THRESHOLD = 50
+
+
+def init_alerts():
+    if "alert_thresholds" in st.session_state:
+        return
+    user = get_current_user()
+    prefs = (load_alert_prefs(user["id"]) if user else None) or {}
+    saved = prefs.get("thresholds", {})
+    st.session_state.alert_thresholds = {t: int(saved.get(t, DEFAULT_THRESHOLD)) for t in ASSETS}
+    st.session_state.alerts_enabled = bool(prefs.get("enabled", True))
+
+
+def _persist():
+    user = get_current_user()
+    if user:
+        save_alert_prefs(user["id"], {"enabled": st.session_state.alerts_enabled,
+                                      "thresholds": st.session_state.alert_thresholds})
+
+
+def render_alert_settings():
+    init_alerts()
+    with st.expander("🔔 Alert thresholds", expanded=False):
+        enabled = st.toggle("Alerts enabled", value=st.session_state.alerts_enabled, key="alert_toggle")
+        changed = enabled != st.session_state.alerts_enabled
+        st.session_state.alerts_enabled = enabled
+        if enabled:
+            st.caption("Alert when a coin's composite risk score reaches:")
+            for ticker in ASSETS:
+                val = st.slider(ticker, 0, 100, st.session_state.alert_thresholds[ticker], step=5, key=f"thresh_{ticker}")
+                if val != st.session_state.alert_thresholds[ticker]:
+                    st.session_state.alert_thresholds[ticker] = val
+                    changed = True
+        if changed:
+            _persist()
+
+
+def check_and_show_alerts(current_risks: dict):
+    """current_risks = {"USDC": 13.5, "USDT": None, ...} — None (no data) never triggers."""
+    init_alerts()
+    if not st.session_state.alerts_enabled:
+        return
+    for ticker, risk in current_risks.items():
+        threshold = st.session_state.alert_thresholds.get(ticker, DEFAULT_THRESHOLD)
+        if risk is None or risk < threshold:
+            continue
+        color = "#ef4444" if risk >= 70 else "#f59e0b"
+        st.markdown(f"""
+        <div style="background:{color}14;border:1px solid {color}66;border-radius:12px;padding:12px 18px;
+                    margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;">
+          <div>
+            <span style="font-size:15px;font-weight:800;color:{color};">⚠ {esc(ticker)}</span>
+            <span style="font-size:13px;color:#94a3b8;margin-left:10px;">risk score crossed your threshold of {threshold}</span>
+          </div>
+          <span style="font-size:20px;font-weight:800;color:{color};">{risk:.1f}</span>
+        </div>""", unsafe_allow_html=True)
