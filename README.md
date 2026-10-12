@@ -8,7 +8,7 @@ a 7-day depeg forecast, whale-transfer tracking, market/DeFi/yield views, and an
 ```bash
 pip install -r requirements.txt
 cp .env.example .env          # optional: add API keys (see below)
-streamlit run app.py
+streamlit run app.py        # or: python3 app.py
 ```
 
 The first page load takes ~20 seconds while the FinBERT sentiment model downloads/loads; after that,

@@ -1,14 +1,21 @@
 """
 ChainIntel — entry point.
 
-    streamlit run app.py
+    streamlit run app.py        (or just: python3 app.py)
 
 This file runs on every page load: theme, sign-in, navigation and the sidebar live here, and each
 view in views/ only renders its own content.
 """
 import os
+import sys
 
 import streamlit as st
+
+# Started with plain `python app.py` (e.g. the editor's Run button)? Relaunch it as a Streamlit server.
+if __name__ == "__main__" and not st.runtime.exists():
+    from streamlit.web import cli as stcli
+    sys.argv = ["streamlit", "run", os.path.abspath(__file__), *sys.argv[1:]]
+    sys.exit(stcli.main())
 
 import config
 from auth import apply_cookie_action, get_current_user, logout, render_auth_wall
