@@ -1,0 +1,42 @@
+# Runs the collector on a schedule for a hosted deployment (e.g. Streamlit Community Cloud + Postgres).
+# Does nothing until the repository has a DATABASE_URL secret. GitHub may delay scheduled runs by a few minutes.
+name: collector
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency: collector
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+      REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+      REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+      CHAININTEL_EMAIL: ${{ secrets.CHAININTEL_EMAIL }}
+      CHAININTEL_APP_PASS: ${{ secrets.CHAININTEL_APP_PASS }}
+      CHAININTEL_URL: ${{ secrets.CHAININTEL_URL }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TZ: ${{ vars.DIGEST_TIMEZONE || 'America/Chicago' }}
+    steps:
+      - name: Skip unless a database is configured
+        id: check
+        run: echo "ready=${{ env.DATABASE_URL != '' }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.ready == 'true'
+      - uses: actions/setup-python@v5
+        if: steps.check.outputs.ready == 'true'
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install (CPU-only torch)
+        if: steps.check.outputs.ready == 'true'
+        run: pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+      - name: One collector pass
+        if: steps.check.outputs.ready == 'true'
+        # Retraining happens in retrain.yml (a runner's disk is thrown away after each run).
+        run: python collector.py --retrain-days 0

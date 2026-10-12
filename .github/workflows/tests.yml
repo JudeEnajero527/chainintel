@@ -1,0 +1,21 @@
+name: tests
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      # The unit tests don't load the sentiment model, so skip the ~800 MB torch/transformers install.
+      - name: Install dependencies
+        run: |
+          grep -v -E '^(torch|transformers)' requirements.txt > /tmp/req.txt
+          pip install -r /tmp/req.txt pytest pgserver
+      - name: Unit tests (SQLite + Postgres)
+        run: pytest --postgres

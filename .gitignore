@@ -10,3 +10,4 @@ venv/
 digest.log
 .collector.lock
 collector.log
+.pytest_cache/
