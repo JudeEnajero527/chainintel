@@ -20,6 +20,7 @@ dex_ok = not dex.get("error")
 # ── Signal scores (0–100, higher = more worrying; None = unavailable) ──────────
 trend_score = min(trends["score"] * 1.5, 100) if trends else None
 buzz_score = reddit["buzz"] if reddit else None
+neg_share = reddit.get("negative_share") if reddit else None
 turnover_score = min(dex["turnover"] * 100, 100) if dex_ok and dex["turnover"] is not None else None
 sell_score = max(0.0, min(100.0, (dex["sell_pressure"] - 50) * 4)) if dex_ok and dex["sell_pressure"] is not None else None
 
@@ -30,9 +31,10 @@ with c1:
                      f"{esc(trends['trend'])} · 7d avg {trends['week_avg']}" if trends else "Google Trends rate-limited — try later",
                      color=risk_hex(trend_score) if trends else None), unsafe_allow_html=True)
 with c2:
-    st.markdown(card("Reddit posts · 24h", str(reddit["count_24h"]) if reddit else "—",
-                     f"{reddit['count_7d']} this week" if reddit else "Reddit unavailable (rate-limited)",
-                     color=risk_hex(buzz_score) if reddit else None), unsafe_allow_html=True)
+    sub = (f"{reddit['count_7d']} this week · {neg_share:.0f}% read negative" if reddit and neg_share is not None
+           else f"{reddit['count_7d']} this week" if reddit else "Reddit unavailable (rate-limited)")
+    st.markdown(card("Stress posts · 24h", str(reddit["count_24h"]) if reddit else "—", sub,
+                     color=risk_hex(neg_share if neg_share is not None else buzz_score) if reddit else None), unsafe_allow_html=True)
 with c3:
     st.markdown(card("24h DEX volume", fmt_usd(dex["volume24h"]) if dex_ok else "—",
                      f"{dex['turnover']:.2f}× liquidity turned over" if dex_ok and dex["turnover"] is not None else "DexScreener unavailable"),
@@ -77,22 +79,29 @@ with right:
                     unsafe_allow_html=True)
 
 # ── Reddit posts ───────────────────────────────────────────────────────────────
-st.markdown(section("Recent Reddit posts"), unsafe_allow_html=True)
+st.markdown(section("Reddit posts mentioning stress"), unsafe_allow_html=True)
+st.caption(f"Posts in r/CryptoCurrency, r/defi, r/stablecoins and r/ethfinance that mention {ticker} together with words like "
+           "depeg, redeem, reserves, bank run or exploit — scored by FinBERT. "
+           + ("Source: official Reddit API." if reddit and reddit.get("source") == "api" else "Source: Reddit public feed (add API keys in .env for reliability)."))
 if reddit is None:
     st.markdown(empty_state("🤐", "Reddit unavailable",
                             "Reddit rate-limits anonymous access. A reliable feed needs Reddit API credentials."),
                 unsafe_allow_html=True)
 elif not reddit["posts"]:
-    st.markdown(empty_state("🤐", "No posts this week", f"Nobody in the tracked subreddits mentioned {ticker} in the last 7 days."),
+    st.markdown(empty_state("🤐", "No stress chatter this week", f"No posts in the tracked subreddits paired {ticker} with depeg or redemption language in the last 7 days — a calm sign."),
                 unsafe_allow_html=True)
 else:
     for p in reddit["posts"]:
         age = fmt_age((datetime.now(timezone.utc) - p["time"]).total_seconds()) if p["time"] else ""
+        badge = {"negative": '<span class="news-badge-neg">Negative</span> ', "positive": '<span class="news-badge-pos">Positive</span> ',
+                 "neutral": '<span class="news-badge-neu">Neutral</span> '}.get(p.get("sentiment"), "")
+        extra = f" · ▲ {p['score']} · {p['comments']} comments" if p.get("score") is not None else ""
         st.markdown(f"""
         <a class="row-link" href="{esc(p['url'])}" target="_blank" rel="noopener">
           <div class="data-row"><div style="flex:1;">
-            <div style="font-size:14px;font-weight:500;color:#f1f5f9;line-height:1.4;">{esc(p['title'])}</div>
-            <div class="note">r/{esc(p['sub'])} · {age}</div>
+            <div>{badge}</div>
+            <div style="font-size:14px;font-weight:500;color:var(--text);line-height:1.4;">{esc(p['title'])}</div>
+            <div class="note">r/{esc(p['sub'])} · {age}{extra}</div>
           </div></div>
         </a>""", unsafe_allow_html=True)
 
@@ -100,7 +109,7 @@ else:
 st.markdown(section("Signal summary"), unsafe_allow_html=True)
 signals = [
     ("Search interest", trend_score, "Spikes in searches like “USDC depeg” mean people are worried."),
-    ("Reddit buzz", buzz_score, "50 = a normal day of posts, 100 = twice the weekly average."),
+    ("Reddit stress", neg_share, "Share of stress-related posts that read as negative."),
     ("DEX turnover", turnover_score, "Volume relative to liquidity. Heavy churn can mean holders are leaving."),
     ("Sell pressure", sell_score, "0 = balanced buys and sells, 100 = 75%+ of trades are sells."),
 ]

@@ -564,6 +564,13 @@ class RiskEngine:
             return None
 
     REDDIT_SUBS = "CryptoCurrency+defi+stablecoins+ethfinance"
+    # Searching the bare ticker mostly finds unrelated chatter ("how do I send USDC…"); these terms find stress.
+    STRESS_TERMS = ["depeg", "depegged", "peg", "redeem", "redemption", "bank run", "reserves", "collapse",
+                    "exploit", "hack", "freeze", "frozen", "insolvent", "audit"]
+
+    def _reddit_query(self, ticker) -> str:
+        terms = " OR ".join(f'"{t}"' if " " in t else t for t in self.STRESS_TERMS)
+        return f"{ticker} ({terms})"
 
     def _reddit_token(self) -> str | None:
         """App-only OAuth token (client-credentials grant), refreshed shortly before it expires."""
@@ -583,7 +590,7 @@ class RiskEngine:
 
     def _reddit_api_posts(self, ticker, token) -> list[dict]:
         r = _session.get(f"https://oauth.reddit.com/r/{self.REDDIT_SUBS}/search", timeout=10,
-                         params={"q": ticker, "restrict_sr": 1, "sort": "new", "t": "week", "limit": 100, "raw_json": 1},
+                         params={"q": self._reddit_query(ticker), "restrict_sr": 1, "sort": "new", "t": "week", "limit": 100, "raw_json": 1},
                          headers={"Authorization": f"bearer {token}", "User-Agent": REDDIT_UA})
         r.raise_for_status()
         posts = []
@@ -599,7 +606,7 @@ class RiskEngine:
     def _reddit_rss_posts(self, ticker) -> list[dict]:
         ns = {"a": "http://www.w3.org/2005/Atom"}
         xml = _get(f"https://www.reddit.com/r/{self.REDDIT_SUBS}/search.rss",
-                   timeout=10, q=ticker, restrict_sr=1, sort="new", t="week", limit=50).text
+                   timeout=10, q=self._reddit_query(ticker), restrict_sr=1, sort="new", t="week", limit=50).text
         posts = []
         for e in ET.fromstring(xml).findall("a:entry", ns):
             ts = e.findtext("a:updated", namespaces=ns) or e.findtext("a:published", namespaces=ns)
@@ -626,7 +633,21 @@ class RiskEngine:
         except FETCH_ERRORS as e:
             log.warning("Reddit (%s) failed: %s", source, e)
             return None
-        return summarize_reddit(posts, source)
+        return self._score_posts(summarize_reddit(posts, source))
+
+    def _score_posts(self, summary: dict) -> dict:
+        """Adds FinBERT labels to post titles and the share that read as negative (0–100)."""
+        posts = summary["posts"]
+        pipe = self._sentiment_model() if posts else None
+        if pipe is None:
+            summary["negative_share"] = None
+            return summary
+        with self._sentiment_lock:
+            results = pipe([p["title"][:500] for p in posts])
+        for p, r in zip(posts, results):
+            p["sentiment"] = r["label"]
+        summary["negative_share"] = round(100 * sum(r["label"] == "negative" for r in results) / len(results), 1)
+        return summary
 
     # ── DeFiLlama ──────────────────────────────────────────────────────────────
     @ttl_cache(600)
