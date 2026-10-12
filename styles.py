@@ -46,6 +46,25 @@ html, body, p, div, span, label, input, button, textarea, h1, h2, h3, h4, li, td
   letter-spacing: .1em; text-transform: uppercase;
 }
 [data-testid="stLogo"] { height: 2.1rem; max-width: 100%; }
+.st-key-main_nav { gap: 2px !important; }
+.st-key-main_nav [data-testid="stPageLink"] a { border-radius: 8px; padding: 4px 10px; }
+.st-key-main_nav [data-testid="stPageLink"] a span { color: var(--text-2) !important; font-size: 14px; font-weight: 500; }
+.st-key-main_nav [data-testid="stPageLink"] a:hover { background: rgba(148,163,184,.08) !important; }
+.st-key-main_nav [data-testid="stPageLink-NavLink"][aria-current="page"],
+.st-key-main_nav [data-testid="stPageLink"] a[aria-current="page"] { background: rgba(79,140,255,.13) !important; }
+.st-key-main_nav [data-testid="stPageLink"] a[aria-current="page"] span { color: var(--text) !important; font-weight: 600; }
+.nav-section {
+  color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  padding: 16px 0 4px 10px;
+}
+.nav-rule { border: none; border-top: 1px solid var(--border); margin: 14px 0 12px; }
+.st-key-legal_links { margin-top: 18px; gap: 0 !important; }
+.st-key-legal_links [data-testid="stHorizontalBlock"] { gap: 4px !important; width: fit-content; }
+.st-key-legal_links [data-testid="stColumn"] { width: auto !important; flex: 0 0 auto !important; min-width: 0 !important; }
+.st-key-legal_links [data-testid="stPageLink"] a { padding: 0 6px 0 0 !important; background: none !important; }
+.st-key-legal_links [data-testid="stPageLink"] a * { color: var(--muted) !important; font-size: 12px !important; font-weight: 500; }
+.st-key-legal_links [data-testid="stPageLink"] a:hover * { color: var(--text-2) !important; text-decoration: underline; }
+.st-key-legal_links .note { padding-left: 0; margin-top: 2px; }
 
 /* ── Typography ── */
 .page-title { font-size: 30px; font-weight: 800; color: var(--text); letter-spacing: -.8px; line-height: 1.15; }

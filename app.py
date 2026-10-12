@@ -38,7 +38,7 @@ def view(file, title, icon, **kw):
     return st.Page(os.path.join("views", file), title=title, icon=f":material/{icon}:", **kw)
 
 
-nav = st.navigation({
+SECTIONS = {
     "": [view("home.py", "Overview", "space_dashboard", default=True)],
     "Risk": [
         view("monitor.py", "Monitor", "monitor_heart", url_path="monitor"),
@@ -58,24 +58,32 @@ nav = st.navigation({
         view("portfolio.py", "Portfolio", "account_balance_wallet", url_path="portfolio"),
         view("settings.py", "Settings", "settings", url_path="settings"),
     ],
-    "About": [
-        view("terms.py", "Terms of Use", "gavel", url_path="terms"),
-        view("privacy.py", "Privacy Policy", "shield", url_path="privacy"),
-    ],
-})
+}
+# Reachable pages that don't belong in the menu — linked from the sidebar footer instead.
+TERMS = view("terms.py", "Terms of Use", "gavel", url_path="terms")
+PRIVACY = view("privacy.py", "Privacy Policy", "shield", url_path="privacy")
+
+# Streamlit's built-in menu can't hide individual pages, so it's turned off and drawn below.
+nav = st.navigation([p for pages in SECTIONS.values() for p in pages] + [TERMS, PRIVACY], position="hidden")
 st.session_state["_page"] = nav.url_path or "home"
 
 engine = get_engine()
 user = get_current_user()
 with st.sidebar:
+    with st.container(key="main_nav"):
+        for section, pages in SECTIONS.items():
+            if section:
+                st.markdown(f'<div class="nav-section">{section}</div>', unsafe_allow_html=True)
+            for page in pages:
+                st.page_link(page, icon=page.icon)
+    st.markdown('<hr class="nav-rule">', unsafe_allow_html=True)
     st.markdown(
-        f'<div class="note" style="margin-top:14px;">Signed in as <strong style="color:var(--text);">{esc(user["username"])}</strong></div>',
+        f'<div class="note">Signed in as <strong style="color:var(--text);">{esc(user["username"])}</strong></div>',
         unsafe_allow_html=True,
     )
     if st.button("Sign out", icon=":material/logout:", key="sidebar_logout", use_container_width=True):
         logout()
         st.rerun()
-
 
 
 def model_status():
@@ -92,6 +100,11 @@ def model_status():
 
 status_slot = st.sidebar.empty()
 model_status()
+with st.sidebar.container(key="legal_links"):
+    terms_col, privacy_col = st.columns(2, gap="small")
+    terms_col.page_link(TERMS, label="Terms")
+    privacy_col.page_link(PRIVACY, label="Privacy")
+    st.markdown('<div class="note">Not financial advice</div>', unsafe_allow_html=True)
 apply_cookie_action()
 nav.run()
 model_status()      # refresh once the page has run, so it reflects models the page just loaded
