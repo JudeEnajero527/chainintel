@@ -20,6 +20,7 @@ KEYS = {
     "CHAININTEL_EMAIL":     "Gmail address the daily digest is sent from",
     "CHAININTEL_APP_PASS":  "Gmail App Password (myaccount.google.com/apppasswords)",
     "CHAININTEL_URL":       "Public URL of the dashboard, used in email links",
+    "CHAININTEL_CONTACT_EMAIL": "Public contact address shown in the Terms of Use and Privacy Policy",
     "CHAININTEL_DB":        "Path to the SQLite database (default: chainintel.db next to the code)",
     "DATABASE_URL":         "Postgres connection string for hosting (overrides CHAININTEL_DB)",
     "TELEGRAM_BOT_TOKEN":   "Telegram bot token for push alerts (@BotFather)",

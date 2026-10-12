@@ -24,11 +24,7 @@ DISCORD_RE = re.compile(r"^https://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/w
 
 def init_db():
     with db.connect() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS alert_state (
-                user_id INTEGER NOT NULL, key TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 0, changed TEXT,
-                PRIMARY KEY (user_id, key)
-            )""")
+        conn.execute(auth.ALERT_STATE_DDL)
 
 # ── Channels ────────────────────────────────────────────────────────────────────
 

@@ -100,6 +100,7 @@ The app creates its tables on first run. SQLite isn't suitable there because the
 | `collector.py` | Background job: snapshots, history, forecasts, alerts, digest, retraining |
 | `notify.py` | Push alerts (email, Discord, Telegram) |
 | `mailer.py` | Outgoing email |
+| `legal.py` | Terms of Use and Privacy Policy (keep in sync with what the app stores) |
 | `tests/` | pytest suite |
 
 `chainintel.db` (SQLite) holds user accounts, risk history and the forecast log. It is git-ignored; back it up separately.

@@ -58,6 +58,10 @@ nav = st.navigation({
         view("portfolio.py", "Portfolio", "account_balance_wallet", url_path="portfolio"),
         view("settings.py", "Settings", "settings", url_path="settings"),
     ],
+    "About": [
+        view("terms.py", "Terms of Use", "gavel", url_path="terms"),
+        view("privacy.py", "Privacy Policy", "shield", url_path="privacy"),
+    ],
 })
 st.session_state["_page"] = nav.url_path or "home"
 

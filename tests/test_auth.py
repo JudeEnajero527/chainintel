@@ -102,3 +102,21 @@ def test_preferences_round_trip(auth):
     auth.save_alert_prefs(uid, {"enabled": True, "thresholds": {"USDC": 40}})
     assert auth.load_portfolio(uid) == {"USDC": 1000.0}
     assert auth.load_alert_prefs(uid)["thresholds"]["USDC"] == 40
+
+
+def test_delete_account_removes_everything(auth):
+    import db, notify                                                          # noqa: E401
+    auth.create_user("zed", "zed@example.com", "password-123", accepted_terms=True)
+    uid = auth.verify_user("zed", "password-123")[0]["id"]
+    session = auth.create_session(uid)
+    auth._issue_token(uid, "reset", auth.RESET_TTL)
+    notify._set_state(uid, "risk:USDC", True)
+    with db.connect() as conn:
+        assert conn.execute("SELECT terms_accepted FROM users WHERE id=?", (uid,)).fetchone()[0]
+    assert not auth.delete_account(uid, "wrong-password")[0]
+    assert auth.delete_account(uid, "password-123")[0]
+    assert auth.user_from_session(session) is None and auth.get_user(uid) is None
+    with db.connect() as conn:
+        for table in ("sessions", "auth_tokens", "alert_state"):
+            assert conn.execute(f"SELECT COUNT(*) FROM {table} WHERE user_id=?", (uid,)).fetchone()[0] == 0
+    assert auth.create_user("zed", "zed@example.com", "password-123")[0]      # name and email are free again

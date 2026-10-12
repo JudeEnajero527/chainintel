@@ -37,7 +37,15 @@ _EXTRA_COLUMNS = {
     "portfolio":         "TEXT",
     "email_verified":    "INTEGER NOT NULL DEFAULT 0",
     "notify_prefs":      "TEXT",
+    "terms_accepted":    "TEXT",
 }
+
+# Push-alert state lives here (not in notify.py) so deleting an account can always clean it up.
+ALERT_STATE_DDL = """
+    CREATE TABLE IF NOT EXISTS alert_state (
+        user_id INTEGER NOT NULL, key TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 0, changed TEXT,
+        PRIMARY KEY (user_id, key)
+    )"""
 
 
 def init_user_db():
@@ -72,6 +80,7 @@ def init_user_db():
                 purpose    TEXT NOT NULL,
                 expires    TEXT NOT NULL
             )""")
+        conn.execute(ALERT_STATE_DDL)
         now = _now().isoformat()
         conn.execute("DELETE FROM sessions WHERE expires < ?", (now,))
         conn.execute("DELETE FROM auth_tokens WHERE expires < ?", (now,))
@@ -114,7 +123,9 @@ def get_user(user_id: int) -> dict | None:
     return _row_to_user(row) if row else None
 
 
-def create_user(username: str, email: str, password: str, digest_opt_in: bool = True) -> tuple[bool, str]:
+def create_user(username: str, email: str, password: str, digest_opt_in: bool = True,
+                accepted_terms: bool = False) -> tuple[bool, str]:
+    """Creates an account. `accepted_terms` records when the user agreed to the Terms and Privacy Policy."""
     username, email = username.strip(), email.strip().lower()
     if not USERNAME_RE.match(username):
         return False, "Username must be 3–32 characters: letters, numbers, dot, dash or underscore."
@@ -130,8 +141,10 @@ def create_user(username: str, email: str, password: str, digest_opt_in: bool = 
     try:
         with db.connect() as conn:
             conn.execute(
-                "INSERT INTO users (username, email, password, created, digest_opt_in, unsubscribe_token) VALUES (?,?,?,?,?,?)",
-                (username, email, hash_password(password), _now().isoformat(), int(digest_opt_in), secrets.token_urlsafe(24)),
+                "INSERT INTO users (username, email, password, created, digest_opt_in, unsubscribe_token, terms_accepted) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (username, email, hash_password(password), _now().isoformat(), int(digest_opt_in), secrets.token_urlsafe(24),
+                 _now().isoformat() if accepted_terms else None),
             )
     except db.IntegrityError:
         return False, "That username or email is already registered."
@@ -369,6 +382,19 @@ def alert_subscribers() -> list[dict]:
     return subs
 
 
+def delete_account(user_id: int, password: str) -> tuple[bool, str]:
+    """Permanently deletes the account and everything tied to it, after re-checking the password."""
+    with db.connect() as conn:
+        row = conn.execute("SELECT password FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not row or not _check_password(password, row[0])[0]:
+            return False, "Password is incorrect."
+        # Explicit deletes rather than relying on ON DELETE CASCADE (SQLite only enforces it when enabled).
+        for table in ("sessions", "auth_tokens", "alert_state"):
+            conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    return True, "Your account and all its data have been deleted."
+
+
 def change_password(user_id: int, current: str, new: str, keep_token: str | None = None) -> tuple[bool, str]:
     """Checks the current password, stores the new one, and signs out every other remembered device."""
     if len(new) < MIN_PASSWORD_LEN:
@@ -528,7 +554,7 @@ LEFT_PANEL = """
   <span>Price, on-chain DEX depth, and news sentiment rolled into one transparent risk score.</span></div></div>
 <div class="auth-feature"><div class="auth-feature-icon">🤖</div><div>
   <strong>Depeg forecasting, honestly evaluated</strong>
-  <span>Tested only on data the model never saw — the real accuracy numbers are on the Intelligence page.</span></div></div>
+  <span>Tested only on data the model never saw — the real accuracy numbers are on the Forecasts page.</span></div></div>
 <div class="auth-feature"><div class="auth-feature-icon">🐋</div><div>
   <strong>Whale transfer tracking</strong>
   <span>Large on-chain stablecoin moves, straight from Ethereum via Etherscan.</span></div></div>
@@ -545,6 +571,23 @@ def _centered_message(kind: str, text: str):
         st.markdown('<div class="auth-logo" style="margin-bottom:28px;">⬡ Chain<span>Intel</span></div>', unsafe_allow_html=True)
         getattr(st, kind)(text)
         if st.button("Continue to ChainIntel →"):
+            st.query_params.clear()
+            st.rerun()
+    st.stop()
+
+
+def _handle_legal_pages():
+    """?legal=terms / ?legal=privacy — readable without an account (linked from sign-up and the login page)."""
+    kind = st.query_params.get("legal")
+    if kind not in ("terms", "privacy"):
+        return
+    import legal
+    st.markdown("<style>[data-testid='stSidebar'],[data-testid='stSidebarCollapsedControl']{display:none !important;}"
+                "[data-testid='stMainBlockContainer']{padding-top:48px !important;}</style>", unsafe_allow_html=True)
+    legal.render(kind)
+    _, mid, _ = st.columns([1, 3, 1])
+    with mid:
+        if st.button("← Back to ChainIntel"):
             st.query_params.clear()
             st.rerun()
     st.stop()
@@ -605,12 +648,16 @@ def render_auth_wall() -> bool:
         st.session_state["_user_db_ready"] = True
     restore_session()
     _handle_email_links()
+    if not is_logged_in():
+        _handle_legal_pages()            # signed-in users reach these through the sidebar instead
     if is_logged_in():
         st.session_state.pop("_signed_out", None)
         return True
     apply_cookie_action()
 
     st.markdown(AUTH_CSS, unsafe_allow_html=True)
+    if msg := st.session_state.pop("_flash", None):
+        st.toast(msg)
     left, right = st.columns([1, 1])
     with left:
         st.markdown(LEFT_PANEL, unsafe_allow_html=True)
@@ -648,9 +695,13 @@ def render_auth_wall() -> bool:
                 password = st.text_input("Password", type="password", placeholder=f"at least {MIN_PASSWORD_LEN} characters")
                 digest = st.checkbox("Email me the daily risk digest", value=True)
                 remember = st.checkbox(f"Keep me signed in for {SESSION_DAYS} days", value=True)
+                agreed = st.checkbox("I'm 18 or older and agree to the [Terms of Use](?legal=terms) "
+                                     "and [Privacy Policy](?legal=privacy)")
                 submitted = st.form_submit_button("Create account →")
-            if submitted:
-                ok, msg = create_user(username, email, password, digest)
+            if submitted and not agreed:
+                st.error("Please agree to the Terms of Use and Privacy Policy to create an account.")
+            elif submitted:
+                ok, msg = create_user(username, email, password, digest, accepted_terms=True)
                 if ok:
                     user, _ = verify_user(username, password)
                     send_verification_email(user)        # no-op message if email isn't configured
@@ -662,7 +713,10 @@ def render_auth_wall() -> bool:
 
         st.markdown(
             '<div class="auth-small" style="margin-top:28px;">'
-            '<span class="live-dot"></span>Data: CoinGecko · DefiLlama · DexScreener · Etherscan</div>',
+            '<span class="live-dot"></span>Data: CoinGecko · DefiLlama · DexScreener · Etherscan<br>'
+            '<a href="?legal=terms" target="_blank" style="color:#94a3b8;">Terms of Use</a> · '
+            '<a href="?legal=privacy" target="_blank" style="color:#94a3b8;">Privacy Policy</a> · '
+            'Not financial advice</div>',
             unsafe_allow_html=True,
         )
     return False

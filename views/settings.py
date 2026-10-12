@@ -7,8 +7,8 @@ import db
 import mailer
 import notify
 from alerts import render_alert_settings
-from auth import (change_password, get_current_user, get_user, load_notify_prefs, logout, save_notify_prefs,
-                  send_verification_email, set_digest_opt_in)
+from auth import (change_password, delete_account, get_current_user, get_user, load_notify_prefs, logout,
+                  save_notify_prefs, send_verification_email, set_digest_opt_in)
 from styles import esc, section
 from ui import get_engine, header
 
@@ -107,6 +107,7 @@ SOURCES = [
     ("Reddit (official API)", "REDDIT_CLIENT_ID", "Without it, Reddit's rate-limited public feed is used. Create a 'script' app at reddit.com/prefs/apps"),
     ("Email (digest, alerts, password reset)", "CHAININTEL_APP_PASS", "Gmail address + App Password (myaccount.google.com/apppasswords)"),
     ("Telegram alerts", "TELEGRAM_BOT_TOKEN", "Create a bot with @BotFather and paste its token"),
+    ("Public contact address", "CHAININTEL_CONTACT_EMAIL", "Shown in the Terms of Use and Privacy Policy — set this before hosting publicly"),
 ]
 for name, key, how in SOURCES:
     ok = True if key is None else status[key] and (key != "REDDIT_CLIENT_ID" or status["REDDIT_CLIENT_SECRET"])
@@ -145,3 +146,23 @@ st.markdown(
     + 'Retrain with <code>python3 train_model.py</code> (about a minute) to pick up the latest market history.</div>',
     unsafe_allow_html=True,
 )
+
+# ── Delete account ─────────────────────────────────────────────────────────────
+st.markdown(section("Delete account"), unsafe_allow_html=True)
+with st.container(border=True):
+    st.markdown("Permanently deletes your account, settings, portfolio, alert history and remembered devices. "
+                "**This can't be undone.**")
+    with st.form("delete_account", clear_on_submit=True):
+        pw = st.text_input("Your password", type="password")
+        confirm = st.text_input('Type DELETE to confirm')
+        go = st.form_submit_button("Delete my account", type="primary")
+    if go:
+        if confirm.strip() != "DELETE":
+            st.error('Type DELETE (in capitals) to confirm.')
+        else:
+            ok, msg = delete_account(user["id"], pw)
+            if ok:
+                logout()
+                st.session_state["_flash"] = msg
+                st.rerun()
+            st.error(msg)
