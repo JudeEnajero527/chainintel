@@ -21,7 +21,6 @@ with st.spinner("Assessing all stablecoins — the first load takes ~20 seconds 
     market = engine.get_stablecoin_market_caps()
 
 risks = {t: d["risk"]["total"] for t, d in data.items()}
-check_and_show_alerts(risks)
 
 # ── Status banner ──────────────────────────────────────────────────────────────
 off_peg  = [t for t, d in data.items() if d["ml"]["label"] == "Off peg now"]
@@ -44,6 +43,10 @@ elif elevated or ml_watch:
     sub = ", ".join(watch) + " — elevated risk score or 7-day depeg forecast"
 else:
     level, title, sub = "stable", f"All {len(data)} stablecoins look stable", "Every coin is on peg with low composite risk and low forecast risk."
+
+# Threshold alerts, minus coins the status banner below already names.
+featured = set(off_peg) | set(critical)
+check_and_show_alerts({t: r for t, r in risks.items() if t not in featured})
 
 st.markdown(f"""
 <div class="status status-{level}">

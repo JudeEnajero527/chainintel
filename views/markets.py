@@ -21,7 +21,8 @@ if not coins:
 
 total = sum(c["market_cap"] for c in coins)
 top = coins[0]
-off_peg = [c for c in coins if c["price"] and c["peg_type"] == "USD" and abs(c["price"] - 1) >= 0.005]
+# Yield-bearing tokens (USYC, USDY…) are designed to drift above $1 — that's interest, not a depeg.
+off_peg = [c for c in coins if c["price"] and c["peg_type"] == "USD" and not c["yield_bearing"] and abs(c["price"] - 1) >= 0.005]
 
 m1, m2, m3, m4, m5 = st.columns(5)
 with m1:
@@ -82,20 +83,22 @@ with right:
 
 st.markdown(section("Leaderboard"), unsafe_allow_html=True)
 df = pd.DataFrame([{
-    "Symbol": c["symbol"], "Name": c["name"], "Market cap": c["market_cap"],
+    "Symbol": c["symbol"], "Name": c["name"], "Market cap": c["market_cap"] / 1e9,
     "Share": c["market_cap"] / total * 100, "Price": c["price"],
-    "Off peg %": abs(c["price"] - 1) * 100 if c["price"] and c["peg_type"] == "USD" else None,
-    "Chains": c["chain_count"], "Peg": c["peg_type"], "Mechanism": c["peg_mech"],
+    "Off peg %": (abs(c["price"] - 1) * 100 if c["price"] and c["peg_type"] == "USD" and not c["yield_bearing"] else None),
+    "Chains": c["chain_count"], "Peg": c["peg_type"],
+    "Mechanism": c["peg_mech"] + (" · yield-bearing" if c["yield_bearing"] else ""),
 } for c in coins])
 df.index = range(1, len(df) + 1)
 st.dataframe(
     df, use_container_width=True, height=min(38 * len(df) + 40, 720),
     column_config={
-        "Market cap": st.column_config.NumberColumn(format="dollar"),
+        "Market cap": st.column_config.NumberColumn(format="$%.2fB"),
         "Share": st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
         "Price": st.column_config.NumberColumn(format="$%.4f"),
-        "Off peg %": st.column_config.NumberColumn(format="%.3f%%"),
+        "Off peg %": st.column_config.NumberColumn(format="%.3f%%", help="Blank for yield-bearing tokens, which trade above $1 by design"),
     },
 )
+st.caption("Blank cells = no price available. Yield-bearing tokens accrue interest, so they trade above $1 by design and aren't counted as off peg.")
 st.markdown('<div class="footer-note">Data: DefiLlama · alternative.me · Etherscan · refreshes every 10 minutes</div>',
             unsafe_allow_html=True)

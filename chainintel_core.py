@@ -536,6 +536,7 @@ class RiskEngine:
                 "peg_type": (c.get("pegType") or "").removeprefix("pegged"),
                 "peg_mech": c.get("pegMechanism") or "", "market_cap": cap,
                 "price": c.get("price"), "chain_count": len(c.get("chains") or []),
+                "yield_bearing": bool(c.get("yieldBearing")),
             })
         result.sort(key=lambda x: -x["market_cap"])
         return result[:25]

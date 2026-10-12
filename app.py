@@ -25,7 +25,7 @@ from ui import get_engine
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 st.set_page_config(page_title="ChainIntel", page_icon=os.path.join(HERE, "assets", "icon.svg"),
-                   layout="wide", initial_sidebar_state="expanded")
+                   layout="wide", initial_sidebar_state="auto")
 st.markdown(BASE_CSS, unsafe_allow_html=True)
 
 if not render_auth_wall():

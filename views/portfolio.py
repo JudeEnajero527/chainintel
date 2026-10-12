@@ -73,8 +73,9 @@ top_coin = max(rows, key=lambda r: r["amount"])["ticker"]
 m1, m2, m3, m4 = st.columns(4)
 with m1:
     mtm = sum(known_value)
+    diff = mtm - sum(r["amount"] for r in rows if r["value"] is not None)
     st.markdown(card("Market value today", fmt_usd(mtm, 2),
-                     f"{fmt_usd(mtm - sum(r['amount'] for r in rows if r['value'] is not None), 2)} vs. face value"),
+                     f"{'+' if diff >= 0 else '−'}{fmt_usd(abs(diff), 2)} vs. face value"),
                 unsafe_allow_html=True)
 with m2:
     st.markdown(card("Weighted risk score", f"{weighted:.1f}" if weighted is not None else "—", status_pill(weighted),
@@ -112,7 +113,7 @@ with right:
                               marker_color="rgba(239,68,68,.35)"))
         fig2.update_layout(**PLOT_LAYOUT, height=300, barmode="group",
                            legend=dict(orientation="h", y=1.08, bgcolor="rgba(0,0,0,0)"))
-        fig2.update_yaxes(tickprefix="$", type="log")
+        fig2.update_yaxes(tickprefix="$", type="log", dtick=1, tickformat=",.0f")
         st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
     st.markdown('<div class="note">Log scale — expected losses are usually orders of magnitude smaller than worst cases.</div>',
                 unsafe_allow_html=True)
@@ -141,7 +142,8 @@ for col, (name, shocks) in zip(cols, SCENARIOS.items()):
     loss = sum(r["amount"] * (1 - shocks[r["ticker"]]) for r in rows if r["ticker"] in shocks)
     hit = [r["ticker"] for r in rows if r["ticker"] in shocks]
     with col:
-        st.markdown(card(name, f"-{fmt_usd(loss, 1)}", f"{loss/total*100:.1f}% of portfolio · hits {', '.join(hit) or 'none of your coins'}",
+        st.markdown(card(name, f"−{fmt_usd(loss, 1)}" if loss else "No loss",
+                         f"{loss/total*100:.1f}% of portfolio · hits {', '.join(hit)}" if hit else "doesn't affect your coins",
                          color="#ef4444" if loss else "#22c55e"), unsafe_allow_html=True)
 with cols[-1]:
     with st.container(border=True):
