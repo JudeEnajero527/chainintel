@@ -314,6 +314,24 @@ class RiskEngine:
             log.warning("DeFiLlama history failed: %s", e)
             return None
 
+    @ttl_cache(6 * 3600, failure_seconds=600)
+    def _llama_supply(self) -> pd.DataFrame | None:
+        """Daily circulating supply for the tracked assets (a model input)."""
+        try:
+            ids = {a["coingecko_id"] for a in ASSETS.values()}
+            meta = [m for m in depeg_model.fetch_meta(timeout=30) if m["gecko_id"] in ids]
+            return depeg_model.fetch_supply_history(meta)
+        except FETCH_ERRORS as e:
+            log.warning("DeFiLlama supply failed: %s", e)
+            return None
+
+    def get_supply(self, ticker) -> pd.Series | None:
+        sup = self._llama_supply()
+        if sup is None:
+            return None
+        s = sup[sup["coin"] == ASSETS[ticker]["coingecko_id"]].set_index("date")["supply"]
+        return s if len(s) else None
+
     def get_daily_prices(self, ticker) -> pd.Series | None:
         """Full daily price history for a tracked asset (DeFiLlama), as a date-indexed Series."""
         hist = self._llama_history()
@@ -412,7 +430,7 @@ class RiskEngine:
         return {"score": round(score, 1), "items": items, "error": None}
 
     # ── ML forecast ────────────────────────────────────────────────────────────
-    def predict_from_prices(self, daily_prices: pd.Series, live_price=None) -> dict:
+    def predict_from_prices(self, daily_prices: pd.Series, live_price=None, supply: pd.Series | None = None) -> dict:
         """7-day depeg probability for a daily price series (optionally with today's live price appended)."""
         if self.model is None:
             return {"probability": None, "level": "unknown", "label": "Model not trained"}
@@ -422,19 +440,21 @@ class RiskEngine:
         if live_price is not None:
             s = s.copy()
             s.loc[pd.Timestamp.now("UTC").tz_localize(None).normalize()] = live_price
-        feats = depeg_model.latest_features(s)
+        features = self.model_meta.get("features", depeg_model.FEATURES)
+        feats = depeg_model.latest_features(s, supply, features)
         if feats is None:
             return {"probability": None, "level": "unknown", "label": "Not enough history"}
         if feats["abs_dev"] >= depeg_model.PEGGED_THRESHOLD:
             return {"probability": None, "level": "critical", "label": "Off peg now", "features": feats}
-        prob = float(self.model.predict_proba(pd.DataFrame([feats])[depeg_model.FEATURES])[0, 1]) * 100
+        X = pd.DataFrame([{k: (float("nan") if v is None else v) for k, v in feats.items()}])[features]
+        prob = float(self.model.predict_proba(X)[0, 1]) * 100
         alert = self.model_meta.get("metrics", {}).get("alert_threshold", 0.2) * 100
         level = "stable" if prob < alert / 2 else "elevated" if prob < alert else "critical"
         label = {"stable": "Low risk", "elevated": "Watch", "critical": "High risk"}[level]
         return {"probability": round(prob, 1), "level": level, "label": label, "features": feats}
 
     def predict_depeg(self, ticker, live_price=None) -> dict:
-        return self.predict_from_prices(self.get_daily_prices(ticker), live_price)
+        return self.predict_from_prices(self.get_daily_prices(ticker), live_price, self.get_supply(ticker))
 
     # ── full assessment ────────────────────────────────────────────────────────
     def assess(self, ticker, with_sentiment=True) -> dict:
@@ -463,6 +483,7 @@ class RiskEngine:
                 return snap
         self.get_all_prices()
         self._llama_history()
+        self._llama_supply()
         if with_sentiment:
             self._sentiment_model()          # load once before the threads race for it
         with ThreadPoolExecutor(max_workers=len(ASSETS)) as pool:

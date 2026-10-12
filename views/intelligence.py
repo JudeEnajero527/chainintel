@@ -83,6 +83,12 @@ with k4:
     st.markdown(card("ROC-AUC", f"{m['roc_auc']:.2f}", f"Brier score {m['brier']:.3f} (probabilities are calibrated)"),
                 unsafe_allow_html=True)
 
+variants = m.get("variants")
+if variants:
+    st.markdown('<div class="note" style="margin-bottom:8px;">Inputs tested: ' + " · ".join(
+        f"{esc(k)} → PR-AUC {v:.3f}" for k, v in variants.items()) + f'. The live model uses <strong>{esc(meta.get("feature_set", "price"))}</strong> '
+        "(chosen on the validation period, before looking at the test period). Supply flows turned out to add little: "
+        "price behaviour carries almost all the signal.</div>", unsafe_allow_html=True)
 st.markdown('<div class="note">PR-AUC is the honest headline number for rare events: it measures how well the model ranks '
             'coins that will depeg above those that won\'t, and doesn\'t get inflated by the many calm days. '
             f'Retrain any time with <code>python3 train_model.py</code> (last trained {esc(meta["trained_at"])}).</div>',
