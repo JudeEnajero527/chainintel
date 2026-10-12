@@ -5,14 +5,14 @@ Usage:
     python3 send_digest.py            # send to every opted-in user
     python3 send_digest.py --dry-run  # build the email and write it to digest_preview.html instead of sending
 
-Environment:
+Settings (environment variables, or put them in .env — see .env.example):
     CHAININTEL_EMAIL      Gmail address you send from
     CHAININTEL_APP_PASS   Gmail App Password (myaccount.google.com/apppasswords) — not your normal password
     CHAININTEL_URL        Public URL of the dashboard (default http://localhost:8501), used for links + unsubscribe
     ETHERSCAN_API_KEY     optional, enables gas data
 
-Run once daily via cron (cron has a minimal environment, so set the variables in the crontab line):
-    0 8 * * * cd /Users/jaysonenajero/chainintel2 && CHAININTEL_EMAIL=... CHAININTEL_APP_PASS=... /usr/bin/python3 send_digest.py
+Run once daily via cron (settings are read from .env, so the crontab line stays short):
+    0 8 * * * cd /Users/jaysonenajero/chainintel2 && /usr/bin/python3 send_digest.py >> digest.log 2>&1
 """
 import argparse
 import os
@@ -25,13 +25,14 @@ from email.utils import formataddr, make_msgid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import config
 from auth import get_digest_recipients, init_user_db
 from chainintel_core import RiskEngine
 from styles import LEVEL_HEX, LEVEL_TEXT, esc, fmt_price
 
-SENDER_EMAIL = os.getenv("CHAININTEL_EMAIL", "")
-SENDER_PASS  = os.getenv("CHAININTEL_APP_PASS", "")
-APP_URL      = os.getenv("CHAININTEL_URL", "http://localhost:8501").rstrip("/")
+SENDER_EMAIL = config.get("CHAININTEL_EMAIL")
+SENDER_PASS  = config.get("CHAININTEL_APP_PASS")
+APP_URL      = config.get("CHAININTEL_URL", "http://localhost:8501").rstrip("/")
 SMTP_HOST, SMTP_PORT = "smtp.gmail.com", 587
 
 
@@ -151,7 +152,7 @@ def main():
         return
 
     if not SENDER_EMAIL or not SENDER_PASS:
-        sys.exit("ERROR: set CHAININTEL_EMAIL and CHAININTEL_APP_PASS (see the top of this file).")
+        sys.exit("ERROR: set CHAININTEL_EMAIL and CHAININTEL_APP_PASS in .env (see .env.example).")
     users = get_digest_recipients()
     if not users:
         print("No opted-in users.")

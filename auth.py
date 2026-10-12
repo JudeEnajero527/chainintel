@@ -10,9 +10,11 @@ from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 
+import config
+
 from styles import esc
 
-DB_PATH = os.getenv("CHAININTEL_DB") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "chainintel.db")
+DB_PATH = config.get("CHAININTEL_DB") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "chainintel.db")
 
 MIN_PASSWORD_LEN = 8
 MAX_FAILED_LOGINS = 5

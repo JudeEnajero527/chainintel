@@ -16,24 +16,27 @@ import threading
 import time
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from html import unescape
 
 import joblib
 import pandas as pd
 import requests
 
+import config
 import depeg_model
 
 log = logging.getLogger("chainintel")
 
 HERE       = os.path.dirname(os.path.abspath(__file__))
-DB_PATH    = os.getenv("CHAININTEL_DB") or os.path.join(HERE, "chainintel.db")
+DB_PATH    = config.get("CHAININTEL_DB") or os.path.join(HERE, "chainintel.db")
 MODEL_PATH = os.path.join(HERE, "chainintel_model.pkl")
 META_PATH  = os.path.join(HERE, "chainintel_model_meta.json")
 
-ETHERSCAN_API_KEY = os.getenv("ETHERSCAN_API_KEY", "")
+ETHERSCAN_API_KEY = config.get("ETHERSCAN_API_KEY")
 ETHERSCAN_URL     = "https://api.etherscan.io/v2/api"
+
+REDDIT_UA = "python:chainintel:v2.0 (stablecoin risk monitor)"
 
 FETCH_ERRORS = (requests.RequestException, ValueError, KeyError, TypeError, IndexError, ET.ParseError)
 
@@ -137,6 +140,16 @@ def _get(url, timeout=8, **params):
     return r
 
 
+def summarize_reddit(posts: list[dict], source: str) -> dict:
+    """Buzz = posts in the last 24h relative to the weekly daily average (50 = normal day, 100 = 2× normal)."""
+    now = datetime.now(timezone.utc)
+    last_day = [p for p in posts if p["time"] and now - p["time"] < timedelta(days=1)]
+    daily_avg = len(posts) / 7
+    buzz = min(100.0, len(last_day) / max(daily_avg, 1) * 50)
+    posts = sorted(posts, key=lambda p: p["time"] or now, reverse=True)
+    return {"posts": posts[:10], "count_24h": len(last_day), "count_7d": len(posts), "buzz": round(buzz), "source": source}
+
+
 def _risk_level(score):
     if score is None:
         return "unknown"
@@ -150,6 +163,8 @@ class RiskEngine:
         self._sentiment_pipe = None
         self._sentiment_lock = threading.Lock()
         self.sentiment_status = "Loads on first use"
+        self._reddit_lock = threading.Lock()
+        self._reddit_auth = None
 
         self.model, self.model_meta = None, {}
         if os.path.exists(MODEL_PATH) and os.path.exists(META_PATH):
@@ -368,7 +383,7 @@ class RiskEngine:
     def get_whale_alerts(self, ticker, min_usd=1_000_000) -> dict:
         """Large transfers among the latest 1,000 on-chain transfers of the token (Etherscan V2)."""
         if not ETHERSCAN_API_KEY:
-            return {"error": "ETHERSCAN_API_KEY is not set — get a free key at etherscan.io/apis", "transfers": []}
+            return {"error": "ETHERSCAN_API_KEY is not set — get a free key at etherscan.io/apis and add it to .env", "transfers": []}
         cfg = ASSETS[ticker]
         try:
             data = _get(ETHERSCAN_URL, timeout=15, chainid=1, module="account", action="tokentx",
@@ -434,32 +449,70 @@ class RiskEngine:
             log.warning("Google Trends failed: %s", e)
             return None
 
+    REDDIT_SUBS = "CryptoCurrency+defi+stablecoins+ethfinance"
+
+    def _reddit_token(self) -> str | None:
+        """App-only OAuth token (client-credentials grant), refreshed shortly before it expires."""
+        cid, secret = config.get("REDDIT_CLIENT_ID"), config.get("REDDIT_CLIENT_SECRET")
+        if not (cid and secret):
+            return None
+        with self._reddit_lock:
+            if self._reddit_auth and self._reddit_auth[1] > time.time():
+                return self._reddit_auth[0]
+            r = _session.post("https://www.reddit.com/api/v1/access_token", auth=(cid, secret),
+                              data={"grant_type": "client_credentials"}, timeout=10,
+                              headers={"User-Agent": REDDIT_UA})
+            r.raise_for_status()
+            body = r.json()
+            self._reddit_auth = (body["access_token"], time.time() + int(body.get("expires_in", 3600)) - 120)
+            return self._reddit_auth[0]
+
+    def _reddit_api_posts(self, ticker, token) -> list[dict]:
+        r = _session.get(f"https://oauth.reddit.com/r/{self.REDDIT_SUBS}/search", timeout=10,
+                         params={"q": ticker, "restrict_sr": 1, "sort": "new", "t": "week", "limit": 100, "raw_json": 1},
+                         headers={"Authorization": f"bearer {token}", "User-Agent": REDDIT_UA})
+        r.raise_for_status()
+        posts = []
+        for child in r.json()["data"]["children"]:
+            d = child["data"]
+            posts.append({
+                "title": d.get("title", ""), "url": "https://www.reddit.com" + d.get("permalink", ""),
+                "sub": d.get("subreddit", ""), "score": d.get("score"), "comments": d.get("num_comments"),
+                "time": datetime.fromtimestamp(d["created_utc"], timezone.utc) if d.get("created_utc") else None,
+            })
+        return posts
+
+    def _reddit_rss_posts(self, ticker) -> list[dict]:
+        ns = {"a": "http://www.w3.org/2005/Atom"}
+        xml = _get(f"https://www.reddit.com/r/{self.REDDIT_SUBS}/search.rss",
+                   timeout=10, q=ticker, restrict_sr=1, sort="new", t="week", limit=50).text
+        posts = []
+        for e in ET.fromstring(xml).findall("a:entry", ns):
+            ts = e.findtext("a:updated", namespaces=ns) or e.findtext("a:published", namespaces=ns)
+            cat, link = e.find("a:category", ns), e.find("a:link", ns)
+            posts.append({
+                "title": unescape(e.findtext("a:title", namespaces=ns) or ""),
+                "url":   link.get("href") if link is not None else "",
+                "sub":   cat.get("label", "").removeprefix("r/") if cat is not None else "",
+                "score": None, "comments": None,
+                "time":  datetime.fromisoformat(ts) if ts else None,
+            })
+        return posts
+
     @ttl_cache(1800, failure_seconds=600)
     def get_reddit_mentions(self, ticker) -> dict | None:
-        """Recent posts mentioning the ticker in crypto subreddits (public RSS; Reddit rate-limits anonymous use)."""
-        ns = {"a": "http://www.w3.org/2005/Atom"}
+        """Recent posts mentioning the ticker in crypto subreddits. Official API if configured, else public RSS."""
+        source = "rss"
         try:
-            xml = _get("https://www.reddit.com/r/CryptoCurrency+defi+stablecoins+ethfinance/search.rss",
-                       timeout=10, q=ticker, restrict_sr=1, sort="new", t="week", limit=50).text
-            posts = []
-            for e in ET.fromstring(xml).findall("a:entry", ns):
-                ts = e.findtext("a:updated", namespaces=ns) or e.findtext("a:published", namespaces=ns)
-                cat = e.find("a:category", ns)
-                link = e.find("a:link", ns)
-                posts.append({
-                    "title": unescape(e.findtext("a:title", namespaces=ns) or ""),
-                    "url":   link.get("href") if link is not None else "",
-                    "sub":   cat.get("label", "").removeprefix("r/") if cat is not None else "",
-                    "time":  datetime.fromisoformat(ts) if ts else None,
-                })
+            token = self._reddit_token()
+            if token:
+                posts, source = self._reddit_api_posts(ticker, token), "api"
+            else:
+                posts = self._reddit_rss_posts(ticker)
         except FETCH_ERRORS as e:
-            log.warning("Reddit failed: %s", e)
+            log.warning("Reddit (%s) failed: %s", source, e)
             return None
-        now = datetime.now().astimezone()
-        last_day = [p for p in posts if p["time"] and now - p["time"] < timedelta(days=1)]
-        daily_avg = len(posts) / 7
-        buzz = min(100.0, len(last_day) / max(daily_avg, 1) * 50)   # 50 = a normal day, 100 = 2× normal
-        return {"posts": posts[:10], "count_24h": len(last_day), "count_7d": len(posts), "buzz": round(buzz)}
+        return summarize_reddit(posts, source)
 
     # ── DeFiLlama ──────────────────────────────────────────────────────────────
     @ttl_cache(600)
