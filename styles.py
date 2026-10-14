@@ -46,25 +46,51 @@ html, body, p, div, span, label, input, button, textarea, h1, h2, h3, h4, li, td
   letter-spacing: .1em; text-transform: uppercase;
 }
 [data-testid="stLogo"] { height: 2.1rem; max-width: 100%; }
-.st-key-main_nav { gap: 2px !important; }
-.st-key-main_nav [data-testid="stPageLink"] a { border-radius: 8px; padding: 4px 10px; }
-.st-key-main_nav [data-testid="stPageLink"] a span { color: var(--text-2) !important; font-size: 14px; font-weight: 500; }
-.st-key-main_nav [data-testid="stPageLink"] a:hover { background: rgba(148,163,184,.08) !important; }
-.st-key-main_nav [data-testid="stPageLink-NavLink"][aria-current="page"],
-.st-key-main_nav [data-testid="stPageLink"] a[aria-current="page"] { background: rgba(79,140,255,.13) !important; }
-.st-key-main_nav [data-testid="stPageLink"] a[aria-current="page"] span { color: var(--text) !important; font-weight: 600; }
+/* Sidebar: one left edge (10px inside the sidebar padding) for every line of text. */
+/* Streamlit gives markdown blocks a -16px bottom margin, which pulls the next element up over them. */
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] { margin-bottom: 0 !important; }
+.st-key-main_nav { gap: 18px !important; margin-top: 4px; }
+[class*="st-key-nav_group_"] { gap: 1px !important; }
+[class*="st-key-nav_group_"] [data-testid="stPageLink"] a { border-radius: 8px; padding: 5px 10px !important; min-height: 0; }
+[class*="st-key-nav_group_"] [data-testid="stPageLink"] a * { color: var(--text-2) !important; font-size: 14px !important; font-weight: 500; }
+[class*="st-key-nav_group_"] [data-testid="stPageLink"] a [data-testid="stIconMaterial"] { font-size: 18px !important; color: var(--muted) !important; }
+[class*="st-key-nav_group_"] [data-testid="stPageLink"] a:hover { background: rgba(148,163,184,.08) !important; }
+[class*="st-key-nav_group_"] [data-testid="stPageLink"] a[aria-current="page"] { background: rgba(79,140,255,.13) !important; }
+[class*="st-key-nav_group_"] [data-testid="stPageLink"] a[aria-current="page"] * { color: var(--text) !important; font-weight: 600; }
+[class*="st-key-nav_group_"] [data-testid="stPageLink"] a[aria-current="page"] [data-testid="stIconMaterial"] { color: var(--accent) !important; }
 .nav-section {
   color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-  padding: 16px 0 4px 10px;
+  padding: 0 10px 6px; line-height: 1.2;
 }
-.nav-rule { border: none; border-top: 1px solid var(--border); margin: 14px 0 12px; }
-.st-key-legal_links { margin-top: 18px; gap: 0 !important; }
-.st-key-legal_links [data-testid="stHorizontalBlock"] { gap: 4px !important; width: fit-content; }
+
+.st-key-sidebar_account { border-top: 1px solid var(--border); margin-top: 18px; padding: 14px 0 0 10px; }
+.st-key-sidebar_account [data-testid="stHorizontalBlock"] { gap: 6px !important; }
+.account { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.avatar {
+  flex: 0 0 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(79,140,255,.16); color: var(--accent); font-size: 12px; font-weight: 700;
+}
+.account-name { font-size: 13.5px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-key-sidebar_account [data-testid="stColumn"]:last-child { display: flex; justify-content: flex-end; }
+.st-key-sidebar_account button[kind="tertiary"] { padding: 2px 6px !important; min-height: 0 !important; }
+.st-key-sidebar_account button[kind="tertiary"] * { color: var(--muted) !important; font-size: 13px !important; }
+.st-key-sidebar_account button[kind="tertiary"]:hover * { color: var(--text) !important; }
+
+.sidebar-meta { font-size: 12px; line-height: 1.7; color: var(--muted); padding: 6px 0 0 10px; }
+.status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin: 0 7px 1px 0; vertical-align: middle; }
+.status-dot.ok { background: var(--green); }
+.status-dot.warn { background: var(--amber); }
+
+.st-key-legal_links { margin-top: -6px; padding-left: 10px; }
+.st-key-legal_links [data-testid="stMarkdownContainer"] *, .st-key-legal_links [data-testid="stPageLink"] p { margin: 0 !important; line-height: 20px !important; }
+.st-key-legal_links [data-testid="stHorizontalBlock"] { gap: 0 !important; width: fit-content; flex-wrap: nowrap; align-items: center; }
 .st-key-legal_links [data-testid="stColumn"] { width: auto !important; flex: 0 0 auto !important; min-width: 0 !important; }
-.st-key-legal_links [data-testid="stPageLink"] a { padding: 0 6px 0 0 !important; background: none !important; }
+.st-key-legal_links [data-testid="stPageLink"] a { padding: 0 !important; background: none !important; min-height: 0; }
 .st-key-legal_links [data-testid="stPageLink"] a * { color: var(--muted) !important; font-size: 12px !important; font-weight: 500; }
 .st-key-legal_links [data-testid="stPageLink"] a:hover * { color: var(--text-2) !important; text-decoration: underline; }
-.st-key-legal_links .note { padding-left: 0; margin-top: 2px; }
+.st-key-legal_links [data-testid="stColumn"]:not(:last-child)::after { content: "·"; color: var(--muted); font-size: 12px; padding: 0 6px; }
+.st-key-legal_links [data-testid="stColumn"] { display: flex; align-items: center; }
+.legal-note { font-size: 12px; color: var(--muted); white-space: nowrap; }
 
 /* ── Typography ── */
 .page-title { font-size: 30px; font-weight: 800; color: var(--text); letter-spacing: -.8px; line-height: 1.15; }

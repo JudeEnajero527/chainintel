@@ -71,40 +71,43 @@ engine = get_engine()
 user = get_current_user()
 with st.sidebar:
     with st.container(key="main_nav"):
-        for section, pages in SECTIONS.items():
-            if section:
-                st.markdown(f'<div class="nav-section">{section}</div>', unsafe_allow_html=True)
-            for page in pages:
-                st.page_link(page, icon=page.icon)
-    st.markdown('<hr class="nav-rule">', unsafe_allow_html=True)
-    st.markdown(
-        f'<div class="note">Signed in as <strong style="color:var(--text);">{esc(user["username"])}</strong></div>',
-        unsafe_allow_html=True,
-    )
-    if st.button("Sign out", icon=":material/logout:", key="sidebar_logout", use_container_width=True):
-        logout()
-        st.rerun()
+        for i, (section, pages) in enumerate(SECTIONS.items()):
+            with st.container(key=f"nav_group_{i}"):          # keeps each heading attached to its links
+                if section:
+                    st.markdown(f'<div class="nav-section">{section}</div>', unsafe_allow_html=True)
+                for page in pages:
+                    st.page_link(page, icon=page.icon)
+
+    with st.container(key="sidebar_account"):
+        who, out = st.columns([3, 2], vertical_alignment="center", gap="small")
+        who.markdown(
+            f'<div class="account"><span class="avatar">{esc(user["username"][:1].upper())}</span>'
+            f'<span class="account-name">{esc(user["username"])}</span></div>',
+            unsafe_allow_html=True,
+        )
+        if out.button("Sign out", icon=":material/logout:", type="tertiary", key="sidebar_logout"):
+            logout()
+            st.rerun()
+    status_slot = st.empty()
 
 
 def model_status():
+    healthy = engine.model is not None and engine.sentiment_status != "Offline"
     missing = [k for k, ok in config.status().items() if not ok and k in ("ETHERSCAN_API_KEY", "REDDIT_CLIENT_ID")]
+    line = "Models online" if healthy else f"Forecast model: {esc(engine.ml_status)}"
+    extra = f'<div>{len(missing)} data source{"s" if len(missing) != 1 else ""} not set up</div>' if missing else ""
     status_slot.markdown(
-        f'<div class="note" style="margin-top:16px;">'
-        f'<span class="live-dot"></span>Depeg model: {esc(engine.ml_status)}<br>'
-        f'Sentiment model: {esc(engine.sentiment_status)}'
-        + (f'<br>{len(missing)} optional data source(s) need a key — see Settings' if missing else "")
-        + '</div>',
+        f'<div class="sidebar-meta"><div><span class="status-dot {"ok" if healthy else "warn"}"></span>{line}</div>{extra}</div>',
         unsafe_allow_html=True,
     )
 
 
-status_slot = st.sidebar.empty()
 model_status()
 with st.sidebar.container(key="legal_links"):
-    terms_col, privacy_col = st.columns(2, gap="small")
+    terms_col, privacy_col, note_col = st.columns(3, gap="small", vertical_alignment="center")
     terms_col.page_link(TERMS, label="Terms")
     privacy_col.page_link(PRIVACY, label="Privacy")
-    st.markdown('<div class="note">Not financial advice</div>', unsafe_allow_html=True)
+    note_col.markdown('<span class="legal-note">Not financial advice</span>', unsafe_allow_html=True)
 apply_cookie_action()
 nav.run()
 model_status()      # refresh once the page has run, so it reflects models the page just loaded
