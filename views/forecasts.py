@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from depeg_model import FEATURE_LABELS
-from styles import LEVEL_HEX, PLOT_LAYOUT, card, empty_state, esc, fmt_price, risk_hex, section, status_pill
+from styles import LEVEL_HEX, PLOT_LAYOUT, card, empty_state, esc, fmt_price, fmt_prob, risk_hex, section, status_pill
 from ui import get_engine, auto_refresh, header
 
 engine = get_engine()
@@ -29,7 +29,7 @@ st.markdown(section(f"Probability of a ≥{meta['depeg_threshold']:.0%} depeg in
 def forecast_card(t, d):
     ml = d["ml"]
     color = LEVEL_HEX[ml["level"]]
-    prob = f"{ml['probability']:.1f}%" if ml["probability"] is not None else "—"
+    prob = fmt_prob(ml["probability"])
     f = ml.get("features") or {}
     drivers = ""
     if f:
@@ -53,6 +53,11 @@ for row in (tickers[:5], tickers[5:]):
     for col, t in zip(cols, row):
         with col:
             st.markdown(forecast_card(t, data[t]), unsafe_allow_html=True)
+
+st.markdown('<div class="note" style="margin-top:4px;">Forecasts cover fiat-backed coins (USDC, USDT, PYUSD, TUSD) and '
+            'crypto-backed or synthetic dollars (DAI, LUSD, crvUSD, USDe, FRAX), because all of them can lose their peg. '
+            'The 9-coin composite risk score on this site is separate from the ChainIntel v1.0 methodology, which scores fiat-backed coins only.</div>',
+            unsafe_allow_html=True)
 
 # ── Model report card ──────────────────────────────────────────────────────────
 st.markdown(section("Model report card"), unsafe_allow_html=True)
@@ -89,6 +94,30 @@ if variants:
         f"{esc(k)} → PR-AUC {v:.3f}" for k, v in variants.items()) + f'. The live model uses <strong>{esc(meta.get("feature_set", "price"))}</strong> '
         "(chosen on the validation period, before looking at the test period). Supply flows turned out to add little: "
         "price behaviour carries almost all the signal.</div>", unsafe_allow_html=True)
+large = m.get("large_coins")
+if large and large.get("scored"):
+    st.markdown(
+        f'<div class="note" style="margin-bottom:8px;"><strong>Large coins only</strong> (≥${large["min_supply_usd"]/1e9:.0f}B in '
+        f'circulation, {large["coins"]} coins, {large["rows"]:,} coin-days, {large["positives"]:,} followed by a depeg): '
+        f'PR-AUC {large["pr_auc"]:.2f} (naive rule {large["pr_auc_baseline"]:.2f}, random guess {large["prevalence"]:.2f}) · '
+        f'depegs caught {large["recall_at_alert"]*100:.0f}% · warnings right {large["precision_at_alert"]*100:.0f}%. '
+        'Depegs are much rarer among large coins, so these numbers are the stricter test.</div>',
+        unsafe_allow_html=True)
+elif large:
+    eps = large.get("episodes", [])
+    counts = {}
+    for e in eps:
+        counts[e["coin"]] = counts.get(e["coin"], 0) + 1
+    which = ", ".join(f"{esc(c)} ×{n}" if n > 1 else esc(c) for c, n in counts.items())
+    warned = sum(e["warned"] for e in eps)
+    detail = (f" ({which}). The model gave a ≥{m['alert_threshold']*100:.0f}% warning before {warned} of them"
+              if eps else "")
+    st.markdown(
+        f'<div class="note" style="margin-bottom:8px;"><strong>Large coins only</strong> (≥${large["min_supply_usd"]/1e9:.0f}B in '
+        f'circulation, {large["coins"]} coins): {len(eps)} separate depeg episode{"s" if len(eps) != 1 else ""} in the test '
+        f'period{detail}. That\'s too few to score the model fairly on large coins (at least {large.get("min_episodes", 10)} '
+        'are needed), so no accuracy figure is shown for this group.</div>',
+        unsafe_allow_html=True)
 st.markdown('<div class="note">PR-AUC is the honest headline number for rare events: it measures how well the model ranks '
             'coins that will depeg above those that won\'t, and doesn\'t get inflated by the many calm days. '
             f'Retrain any time with <code>python3 train_model.py</code> (last trained {esc(meta["trained_at"])}).</div>',
@@ -157,7 +186,7 @@ else:
         false_alarms = int((alerts & (y == 0)).sum())
         st.markdown(card("False alarms", str(false_alarms), f"of {int(alerts.sum())} warnings"), unsafe_allow_html=True)
     show = done.head(40).assign(
-        Forecast=lambda d: d["probability"].map(lambda v: f"{v:.1f}%"),
+        Forecast=lambda d: d["probability"].map(fmt_prob),
         Outcome=lambda d: d["outcome"].map({1: "🔴 Depegged", 0: "🟢 Held peg"}),
         **{"Worst move": lambda d: (d["max_dev"] * 100).map(lambda v: f"{v:.2f}%")},
     )[["date", "ticker", "Forecast", "Outcome", "Worst move"]].rename(columns={"date": "Forecast date", "ticker": "Coin"})
@@ -190,7 +219,7 @@ sim = engine.predict_from_prices(pd.Series(series, index=idx))
 o1, o2 = st.columns([1, 2])
 with o1:
     prob = sim["probability"]
-    st.markdown(card("Model output", f"{prob:.1f}%" if prob is not None else "—", esc(sim["label"]),
+    st.markdown(card("Model output", fmt_prob(prob), esc(sim["label"]),
                      color=LEVEL_HEX[sim["level"]], border=LEVEL_HEX[sim["level"]]), unsafe_allow_html=True)
 with o2, st.container(border=True):
     fig = go.Figure(go.Scatter(x=idx, y=series, mode="lines", line=dict(color="#a78bfa", width=1.5)))

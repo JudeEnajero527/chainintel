@@ -26,6 +26,7 @@ KEYS = {
     "TELEGRAM_BOT_TOKEN":   "Telegram bot token for push alerts (@BotFather)",
     "SMTP_HOST":            "SMTP server (default smtp.gmail.com)",
     "SMTP_PORT":            "SMTP port (default 587)",
+    "CHAININTEL_SHOW_SIGNALS": "Set to 1 to show Yields, Whale alerts, Social and Portfolio (hidden by default)",
 }
 
 
@@ -63,6 +64,12 @@ _SECRETS = _read_secrets(os.path.join(HERE, ".streamlit", "secrets.toml"))
 
 def get(key: str, default: str = "") -> str:
     return os.environ.get(key) or _DOTENV.get(key) or _SECRETS.get(key) or default
+
+
+def show_signals() -> bool:
+    """Yields, Whale alerts, Social and Portfolio are trading-oriented, so the default build leaves them out
+    and ChainIntel reads as a risk tool. Set CHAININTEL_SHOW_SIGNALS=1 to bring them back."""
+    return get("CHAININTEL_SHOW_SIGNALS").strip().lower() in ("1", "true", "yes", "on")
 
 
 def status() -> dict:

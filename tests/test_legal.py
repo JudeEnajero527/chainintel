@@ -24,3 +24,25 @@ def test_privacy_policy_matches_what_the_app_stores():
 
 def test_terms_say_not_financial_advice():
     assert "not financial" in legal.terms_markdown().lower()
+
+
+def _signals(monkeypatch, on: bool):
+    import config
+    monkeypatch.setattr(config, "_DOTENV", {})
+    monkeypatch.setattr(config, "_SECRETS", {})
+    if on:
+        monkeypatch.setenv("CHAININTEL_SHOW_SIGNALS", "1")
+    else:
+        monkeypatch.delenv("CHAININTEL_SHOW_SIGNALS", raising=False)
+
+
+def test_nothing_points_to_hidden_pages(monkeypatch):
+    import auth
+    _signals(monkeypatch, on=False)
+    text = legal.privacy_markdown()
+    assert "Portfolio page" not in text and "Settings and Portfolio" not in text
+    assert "Portfolio holdings" in text                       # the stored data is still disclosed
+    assert "Whale" not in auth._left_panel()
+    _signals(monkeypatch, on=True)
+    assert "Portfolio page" in legal.privacy_markdown()
+    assert "Whale" in auth._left_panel()

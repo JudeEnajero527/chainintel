@@ -4,7 +4,7 @@ import streamlit as st
 from alerts import check_and_show_alerts
 from auth import get_current_user, load_portfolio, save_portfolio
 from chainintel_core import ASSETS, WORST_CASE
-from styles import PLOT_LAYOUT, card, empty_state, fmt_price, fmt_usd, risk_hex, section, status_pill
+from styles import PLOT_LAYOUT, card, empty_state, fmt_price, fmt_prob, fmt_usd, risk_hex, section, status_pill
 from ui import get_engine, header
 
 engine = get_engine()
@@ -122,7 +122,7 @@ with right:
 st.markdown(section("By asset"), unsafe_allow_html=True)
 for r in rows:
     ml = r["ml"]
-    prob = f"{ml['probability']:.1f}%" if ml["probability"] is not None else ml["label"]
+    prob = fmt_prob(ml["probability"], missing=ml["label"])
     st.markdown(f"""
     <div class="data-row" style="flex-wrap:wrap;gap:16px;">
       <div style="font-size:17px;font-weight:800;color:#f1f5f9;width:70px;">{r['ticker']}</div>

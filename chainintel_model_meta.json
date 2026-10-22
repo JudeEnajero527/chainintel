@@ -1,5 +1,5 @@
 {
-  "trained_at": "2026-10-12 18:36 UTC",
+  "trained_at": "2026-10-22 20:01 UTC",
   "model": "Gradient-boosted trees (HistGradientBoosting) + isotonic calibration",
   "question": "Will a currently-pegged stablecoin trade \u22651% off peg within 7 days?",
   "horizon_days": 7,
@@ -22,43 +22,78 @@
     "log_supply"
   ],
   "feature_set": "price + supply",
-  "coins": 222,
-  "excluded_yield_bearing": 8,
-  "training_rows": 93226,
+  "coins": 218,
+  "excluded_yield_bearing": 4,
+  "training_rows": 93828,
   "data_start": "2020-12-30",
-  "data_end": "2026-10-05",
+  "data_end": "2026-10-15",
   "metrics": {
-    "pr_auc": 0.587,
-    "roc_auc": 0.891,
-    "brier": 0.0642,
-    "precision_at_alert": 0.442,
-    "recall_at_alert": 0.739,
-    "pr_auc_baseline": 0.43,
-    "prevalence": 0.1097,
+    "pr_auc": 0.595,
+    "roc_auc": 0.893,
+    "brier": 0.0625,
+    "precision_at_alert": 0.409,
+    "recall_at_alert": 0.764,
+    "pr_auc_baseline": 0.434,
+    "prevalence": 0.1075,
     "alert_threshold": 0.2,
-    "test_rows": 54785,
-    "test_positives": 6010,
+    "test_rows": 55463,
+    "test_positives": 5961,
     "test_start": "2025-01-01",
-    "test_end": "2026-10-05",
+    "test_end": "2026-10-15",
     "variants": {
-      "price + supply": 0.587,
-      "price only": 0.591
+      "price + supply": 0.595,
+      "price only": 0.599
+    },
+    "large_coins": {
+      "min_supply_usd": 1000000000.0,
+      "rows": 6923,
+      "coins": 17,
+      "positives": 27,
+      "prevalence": 0.0039,
+      "min_episodes": 10,
+      "episodes": [
+        {
+          "coin": "USDe",
+          "start": "2026-01-25",
+          "end": "2026-01-30",
+          "warned": false
+        },
+        {
+          "coin": "FDUSD",
+          "start": "2025-01-12",
+          "end": "2025-01-18",
+          "warned": true
+        },
+        {
+          "coin": "FDUSD",
+          "start": "2025-03-26",
+          "end": "2025-04-01",
+          "warned": false
+        },
+        {
+          "coin": "FDUSD",
+          "start": "2025-05-10",
+          "end": "2025-05-16",
+          "warned": false
+        }
+      ],
+      "scored": false
     }
   },
   "importance": {
-    "vol_30d": 0.2544,
-    "offpeg_days_30d": 0.1309,
-    "max_abs_dev_7d": 0.0678,
-    "log_supply": 0.0385,
-    "vol_7d": 0.0276,
-    "max_abs_dev_30d": 0.0198,
-    "dev_change_1d": 0.0096,
-    "dev_change_7d": 0.0035,
-    "history_days": 0.0026,
-    "abs_dev": 0.002,
-    "dev": 0.0019,
-    "supply_change_7d": 0.0008,
-    "mean_dev_7d": 0.0004,
-    "supply_change_30d": -0.001
+    "vol_30d": 0.2613,
+    "offpeg_days_30d": 0.1404,
+    "max_abs_dev_7d": 0.0691,
+    "log_supply": 0.0444,
+    "vol_7d": 0.0398,
+    "max_abs_dev_30d": 0.0277,
+    "dev_change_1d": 0.009,
+    "history_days": 0.0037,
+    "abs_dev": 0.0003,
+    "dev_change_7d": 0.0001,
+    "mean_dev_7d": -0.0003,
+    "supply_change_30d": -0.001,
+    "supply_change_7d": -0.0018,
+    "dev": -0.0021
   }
 }

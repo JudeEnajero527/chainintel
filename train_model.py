@@ -15,6 +15,7 @@ import os
 from datetime import datetime, timezone
 
 import joblib
+import numpy as np
 import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import HistGradientBoostingClassifier
@@ -29,6 +30,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TRAIN_END = pd.Timestamp("2024-07-01")   # train  < TRAIN_END
 CALIB_END = pd.Timestamp("2025-01-01")   # calibrate/validate [TRAIN_END, CALIB_END), test >= CALIB_END
 ALERT_THRESHOLD = 0.20                   # probability at which the app shows "High Risk"
+LARGE_COIN_USD = 1e9                     # "large coin" = at least $1B in circulation on the day of the forecast
+MIN_EPISODES = 10                        # fewer separate depeg episodes than this → too few to score fairly
 
 
 def make_dataset(history: pd.DataFrame, supply: pd.DataFrame) -> pd.DataFrame:
@@ -74,6 +77,47 @@ def evaluate(model, part, features) -> dict:
     }
 
 
+def evaluate_large(model, test, features, symbols: dict | None = None) -> dict:
+    """
+    Test-period scores restricted to large coins, the ones institutions actually hold. The full test set is
+    dominated by small, fragile coins, so this is the number reviewers will ask about.
+
+    Depeg-ahead *days* overstate how much evidence there is: one depeg labels up to 7 days before it. So
+    depegs are grouped into episodes (same coin, label days ≤3 days apart), and the group is only scored when
+    there are at least MIN_EPISODES of them. Otherwise `scored` is False and the page lists the episodes instead.
+    """
+    symbols = symbols or {}
+    part = test[test["log_supply"] >= np.log10(LARGE_COIN_USD)]
+    y = part["label"].values
+    out = {
+        "min_supply_usd": LARGE_COIN_USD,
+        "rows":           int(len(part)),
+        "coins":          int(part["coin"].nunique()),
+        "positives":      int(y.sum()) if len(part) else 0,
+        "prevalence":     round(float(y.mean()), 4) if len(part) else None,
+        "min_episodes":   MIN_EPISODES,
+    }
+    pos = part[part["label"] == 1].sort_values(["coin", "date"]).copy()
+    episodes = []
+    if len(pos):
+        pos["p"] = model.predict_proba(pos[features])[:, 1]
+        pos["new"] = pos.groupby("coin")["date"].diff().dt.days.fillna(99) > 3
+        pos["episode"] = pos["new"].cumsum()
+        for _, g in pos.groupby("episode"):
+            episodes.append({
+                "coin":   symbols.get(g["coin"].iloc[0], g["coin"].iloc[0]),
+                "start":  f"{g['date'].min():%Y-%m-%d}",
+                "end":    f"{g['date'].max():%Y-%m-%d}",
+                "warned": bool((g["p"] >= ALERT_THRESHOLD).any()),   # any ≥alert forecast in the 7 days before
+            })
+    out["episodes"] = episodes
+    out["scored"] = len(episodes) >= MIN_EPISODES and 0 < y.sum() < len(y)
+    if out["scored"]:
+        out.update(evaluate(model, part, features))
+        out["pr_auc_baseline"] = round(float(average_precision_score(y, part["max_abs_dev_30d"].values)), 3)
+    return out
+
+
 def main():
     print("Downloading DefiLlama stablecoin data…")
     meta_coins = fetch_meta()
@@ -105,8 +149,9 @@ def main():
     features = candidates[chosen]
     print("\nValidation PR-AUC: " + " · ".join(f"{k} {v:.3f}" for k, v in val_scores.items()) + f"  → using {chosen}")
 
-    test_scores = {name: evaluate(fit_calibrated(train, calib, feats), test, feats) for name, feats in candidates.items()}
-    model = fit_calibrated(train, calib, features)
+    models = {name: fit_calibrated(train, calib, feats) for name, feats in candidates.items()}
+    test_scores = {name: evaluate(models[name], test, candidates[name]) for name in candidates}
+    model = models[chosen]
     y = test["label"].values
     metrics = {
         **test_scores[chosen],
@@ -118,6 +163,7 @@ def main():
         "test_start":        f"{CALIB_END:%Y-%m-%d}",
         "test_end":          f"{test['date'].max():%Y-%m-%d}",
         "variants":          {k: v["pr_auc"] for k, v in test_scores.items()},
+        "large_coins":       evaluate_large(model, test, features, {m["gecko_id"]: m["symbol"] for m in meta_coins}),
     }
     print("\nOut-of-sample (test) results:")
     for k, v in metrics.items():

@@ -61,3 +61,26 @@ def test_live_model_scores_calm_and_shaky_coins(engine):
 def test_off_peg_coins_are_not_forecast(engine):
     r = engine.predict_from_prices(series([1.0] * 59 + [0.98]))
     assert r["probability"] is None and r["label"] == "Off peg now"
+
+
+def test_large_coin_scoring_counts_episodes_not_days():
+    import train_model as tm
+
+    class Model:                      # flags only the first day of the first episode
+        def predict_proba(self, X):
+            p = np.zeros(len(X)); p[0] = 0.9
+            return np.c_[1 - p, p]
+
+    dates = pd.date_range("2025-01-01", periods=40, freq="D")
+    rows = []
+    for coin in ("big-a", "big-b"):
+        for i, d in enumerate(dates):
+            depeg_soon = (coin == "big-a" and 5 <= i < 12) or (coin == "big-a" and 30 <= i < 33) or (coin == "big-b" and 20 <= i < 27)
+            rows.append({"date": d, "coin": coin, "label": int(depeg_soon), "log_supply": 9.5, "max_abs_dev_30d": 0.001,
+                         **{f: 0.0 for f in dm.FEATURES if f != "log_supply"}})
+    test = pd.DataFrame(rows)
+    out = tm.evaluate_large(Model(), test, dm.FEATURES, {"big-a": "AAA", "big-b": "BBB"})
+    assert out["positives"] == 17 and len(out["episodes"]) == 3          # 17 labelled days, 3 separate depegs
+    assert [e["coin"] for e in out["episodes"]] == ["AAA", "AAA", "BBB"]
+    assert [e["warned"] for e in out["episodes"]] == [True, False, False]
+    assert out["scored"] is False and "pr_auc" not in out                 # 3 < MIN_EPISODES → no score shown

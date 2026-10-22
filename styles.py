@@ -245,6 +245,13 @@ def risk_bar_html(score, label=""):
             f'<div class="risk-bar-bg"><div class="risk-bar-fill-{risk_color(score)}" style="width:{min(score, 100)}%;"></div></div>')
 
 
+def fmt_prob(p, missing="—"):
+    """A forecast probability in %, never shown as a flat 0.0% (no model can rule a depeg out)."""
+    if p is None:
+        return missing
+    return "<0.1%" if p < 0.1 else f"{p:.1f}%"
+
+
 def fmt_price(p):
     return f"${p:.4f}" if p is not None else "N/A"
 

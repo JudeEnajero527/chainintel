@@ -537,7 +537,7 @@ AUTH_CSS = """
 </style>
 """
 
-LEFT_PANEL = """
+LEFT_PANEL_TEMPLATE = """
 <div class="auth-logo">⬡ Chain<span>Intel</span></div>
 <div class="auth-headline">Know before<br>the <em>depeg</em><br>happens.</div>
 <div class="auth-tagline">
@@ -555,13 +555,25 @@ LEFT_PANEL = """
 <div class="auth-feature"><div class="auth-feature-icon">🤖</div><div>
   <strong>Depeg forecasting, honestly evaluated</strong>
   <span>Tested only on data the model never saw — the real accuracy numbers are on the Forecasts page.</span></div></div>
-<div class="auth-feature"><div class="auth-feature-icon">🐋</div><div>
-  <strong>Whale transfer tracking</strong>
-  <span>Large on-chain stablecoin moves, straight from Ethereum via Etherscan.</span></div></div>
-<div class="auth-feature"><div class="auth-feature-icon">📬</div><div>
+{FEATURE_3}<div class="auth-feature"><div class="auth-feature-icon">📬</div><div>
   <strong>Optional daily digest</strong>
   <span>A morning email with every risk score and anything that moved overnight. One-click unsubscribe.</span></div></div>
 """
+
+
+_WHALE_CARD = """<div class="auth-feature"><div class="auth-feature-icon">🐋</div><div>
+  <strong>Whale transfer tracking</strong>
+  <span>Large on-chain stablecoin moves, straight from Ethereum via Etherscan.</span></div></div>
+"""
+_MARKETS_CARD = """<div class="auth-feature"><div class="auth-feature-icon">🌍</div><div>
+  <strong>Market &amp; DeFi context</strong>
+  <span>Stablecoin supply and market share, plus the DeFi protocols stablecoins depend on.</span></div></div>
+"""
+
+
+def _left_panel() -> str:
+    import config
+    return LEFT_PANEL_TEMPLATE.replace("{FEATURE_3}", _WHALE_CARD if config.show_signals() else _MARKETS_CARD)
 
 
 def _centered_message(kind: str, text: str):
@@ -660,7 +672,7 @@ def render_auth_wall() -> bool:
         st.toast(msg)
     left, right = st.columns([1, 1])
     with left:
-        st.markdown(LEFT_PANEL, unsafe_allow_html=True)
+        st.markdown(_left_panel(), unsafe_allow_html=True)
 
     with right:
         st.markdown('<div class="auth-logo" style="margin-bottom:28px;">⬡ Chain<span>Intel</span></div>', unsafe_allow_html=True)

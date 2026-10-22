@@ -111,6 +111,20 @@ Questions about these terms: {_contact_line()}.
 
 
 def privacy_markdown() -> str:
+    signals = config.show_signals()          # the Portfolio page is optional; don't point at it when it's hidden
+    portfolio_item = (
+        "- **Portfolio holdings** you enter on the Portfolio page (dollar amounts per stablecoin). These are used only\n"
+        "  to show you your own risk figures."
+        if signals else
+        "- **Portfolio holdings**, only if this site's optional portfolio tool is turned on (dollar amounts per\n"
+        "  stablecoin). These are used only to show you your own risk figures."
+    )
+    use_item = "- To show your own portfolio and alert settings back to you." if signals else "- To show your own alert settings back to you."
+    settings_item = (
+        "- **Change your settings** — alerts, notification channels, digest and portfolio — in Settings and Portfolio."
+        if signals else
+        "- **Change your settings** — alerts, notification channels and digest — in Settings."
+    )
     return f"""
 # Privacy Policy
 
@@ -132,8 +146,7 @@ We don't sell your data, show ads, or use tracking or analytics cookies.**
 - Alert thresholds and whether alerts are on.
 - Whether you want the daily digest.
 - Notification channels you add: a Discord webhook URL and/or a Telegram chat ID.
-- **Portfolio holdings** you enter on the Portfolio page (dollar amounts per stablecoin). These are used only
-  to show you your own risk figures.
+{portfolio_item}
 
 **Sign-in cookie**
 - If you choose "Keep me signed in", your browser stores a cookie named `chainintel_session` containing a random
@@ -154,7 +167,7 @@ servers and contains no information about you.
   failed attempts).
 - To send emails and alerts **you've turned on**: the daily digest, risk alerts, password resets and email
   confirmation.
-- To show your own portfolio and alert settings back to you.
+{use_item}
 
 We don't use your data for advertising or profiling, and we don't sell or rent it.
 
@@ -180,7 +193,7 @@ its users.
 
 ## Your choices and rights
 
-- **Change your settings** — alerts, notification channels, digest and portfolio — in Settings and Portfolio.
+{settings_item}
 - **Stop emails** — turn off the digest in Settings or use the unsubscribe link in any digest.
 - **Sign out everywhere** — Settings → Security.
 - **Delete your account** — Settings → Delete account permanently removes your account, settings,

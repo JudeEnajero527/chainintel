@@ -38,27 +38,29 @@ def view(file, title, icon, **kw):
     return st.Page(os.path.join("views", file), title=title, icon=f":material/{icon}:", **kw)
 
 
+SIGNALS = config.show_signals()     # trading-style pages; off by default so ChainIntel reads as a risk tool
 SECTIONS = {
     "": [view("home.py", "Overview", "space_dashboard", default=True)],
     "Risk": [
         view("monitor.py", "Monitor", "monitor_heart", url_path="monitor"),
-        view("intelligence.py", "Forecasts", "psychology", url_path="forecasts"),
+        view("forecasts.py", "Forecasts", "psychology", url_path="forecasts"),
         view("analytics.py", "Analytics", "insights", url_path="analytics"),
     ],
     "Markets": [
         view("markets.py", "Stablecoins", "public", url_path="markets"),
         view("defi.py", "DeFi protocols", "account_balance", url_path="defi"),
-        view("yields.py", "Yields", "savings", url_path="yields"),
+        *([view("yields.py", "Yields", "savings", url_path="yields")] if SIGNALS else []),
     ],
     "Signals": [
         view("whales.py", "Whale alerts", "waves", url_path="whales"),
         view("social.py", "Social", "forum", url_path="social"),
-    ],
+    ] if SIGNALS else [],
     "You": [
-        view("portfolio.py", "Portfolio", "account_balance_wallet", url_path="portfolio"),
+        *([view("portfolio.py", "Portfolio", "account_balance_wallet", url_path="portfolio")] if SIGNALS else []),
         view("settings.py", "Settings", "settings", url_path="settings"),
     ],
 }
+SECTIONS = {name: pages for name, pages in SECTIONS.items() if pages}
 # Reachable pages that don't belong in the menu — linked from the sidebar footer instead.
 TERMS = view("terms.py", "Terms of Use", "gavel", url_path="terms")
 PRIVACY = view("privacy.py", "Privacy Policy", "shield", url_path="privacy")
@@ -92,12 +94,11 @@ with st.sidebar:
 
 
 def model_status():
-    healthy = engine.model is not None and engine.sentiment_status != "Offline"
-    missing = [k for k, ok in config.status().items() if not ok and k in ("ETHERSCAN_API_KEY", "REDDIT_CLIENT_ID")]
+    # Social sentiment only matters when the Social page is on
+    healthy = engine.model is not None and (not SIGNALS or engine.sentiment_status != "Offline")
     line = "Models online" if healthy else f"Forecast model: {esc(engine.ml_status)}"
-    extra = f'<div>{len(missing)} data source{"s" if len(missing) != 1 else ""} not set up</div>' if missing else ""
-    status_slot.markdown(
-        f'<div class="sidebar-meta"><div><span class="status-dot {"ok" if healthy else "warn"}"></span>{line}</div>{extra}</div>',
+    status_slot.markdown(     # optional data sources are reported in Settings, not in every visitor's sidebar
+        f'<div class="sidebar-meta"><div><span class="status-dot {"ok" if healthy else "warn"}"></span>{line}</div></div>',
         unsafe_allow_html=True,
     )
 

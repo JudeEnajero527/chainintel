@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mailer
 from auth import get_digest_recipients, init_user_db
 from chainintel_core import RiskEngine
-from styles import LEVEL_HEX, LEVEL_TEXT, esc, fmt_price
+from styles import LEVEL_HEX, LEVEL_TEXT, esc, fmt_price, fmt_prob
 
 APP_URL = mailer.app_url()
 
@@ -61,7 +61,7 @@ def build_html(rows, alerts, username, unsubscribe_url):
         color = LEVEL_HEX[r["level"]]
         risk = f'{r["risk"]:.0f}' if r["risk"] is not None else "—"
         ml = r["ml"]
-        fc = f'{ml["probability"]:.1f}%' if ml["probability"] is not None else esc(ml["label"])
+        fc = fmt_prob(ml["probability"], missing=esc(ml["label"]))
         body_rows += f"""
         <tr>
           <td {td}><strong style="color:#f9fafb;">{r['ticker']}</strong><br><span style="color:#64748b;font-size:11px;">{esc(r['issuer'])}</span></td>
@@ -110,7 +110,7 @@ def build_text(rows, alerts, username, unsubscribe_url):
         lines += [f"! {len(alerts)} asset(s) need attention: " + ", ".join(r["ticker"] for r in alerts), ""]
     for r in rows:
         risk = f'{r["risk"]:.0f}' if r["risk"] is not None else "n/a"
-        ml = f'{r["ml"]["probability"]:.1f}%' if r["ml"]["probability"] is not None else r["ml"]["label"]
+        ml = fmt_prob(r["ml"]["probability"], missing=r["ml"]["label"])
         lines.append(f"{r['ticker']:7s} {fmt_price(r['price']):>9s}  risk {risk:>3s} ({LEVEL_TEXT[r['level']]})  7d depeg {ml}")
     lines += ["", f"Dashboard: {APP_URL}", f"Unsubscribe: {unsubscribe_url}"]
     return "\n".join(lines)

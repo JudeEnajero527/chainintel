@@ -14,6 +14,7 @@ def test_page_renders(view, database, monkeypatch):
     from streamlit.testing.v1 import AppTest
     import auth
     monkeypatch.chdir(ROOT)
+    monkeypatch.setenv("CHAININTEL_SHOW_SIGNALS", "1")     # render the optional pages too
     auth.create_user("pagetest", "pagetest@example.com", "password-123")
     user = auth.verify_user("pagetest", "password-123")[0]
     at = AppTest.from_file("app.py", default_timeout=300)

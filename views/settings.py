@@ -20,7 +20,7 @@ header("Settings", f"Account, alerts and data sources for {esc(user['username'])
 # ── Alerts ─────────────────────────────────────────────────────────────────────
 st.markdown(section("Risk alerts"), unsafe_allow_html=True)
 with st.container(border=True):
-    st.caption("A banner appears at the top of the Overview, Monitor and Portfolio pages when a coin's composite "
+    st.caption(f"A banner appears at the top of the Overview, Monitor{' and Portfolio' if config.show_signals() else ''} pages when a coin's composite "
                "risk score reaches your threshold. Saved to your account.")
     render_alert_settings()
 
@@ -102,9 +102,12 @@ st.caption("Optional keys unlock more data. Add them to a `.env` file in the pro
            "then restart the app. Keys are never shown here.")
 status = config.status()
 SOURCES = [
-    ("Prices, liquidity, news, DeFi, yields", None, "CoinGecko · DefiLlama · DexScreener · Google News — no key needed"),
-    ("Whale alerts + gas", "ETHERSCAN_API_KEY", "Free key at etherscan.io/apis"),
-    ("Reddit (official API)", "REDDIT_CLIENT_ID", "Without it, Reddit's rate-limited public feed is used. Create a 'script' app at reddit.com/prefs/apps"),
+    ("Prices, liquidity, news, DeFi" + (", yields" if config.show_signals() else ""), None,
+     "CoinGecko · DefiLlama · DexScreener · Google News — no key needed"),
+    ("Whale alerts + gas" if config.show_signals() else "Ethereum gas prices", "ETHERSCAN_API_KEY", "Free key at etherscan.io/apis"),
+    *([("Reddit (official API)", "REDDIT_CLIENT_ID",
+        "Without it, Reddit's rate-limited public feed is used. Create a 'script' app at reddit.com/prefs/apps")]
+      if config.show_signals() else []),
     ("Email (digest, alerts, password reset)", "CHAININTEL_APP_PASS", "Gmail address + App Password (myaccount.google.com/apppasswords)"),
     ("Telegram alerts", "TELEGRAM_BOT_TOKEN", "Create a bot with @BotFather and paste its token"),
     ("Public contact address", "CHAININTEL_CONTACT_EMAIL", "Shown in the Terms of Use and Privacy Policy — set this before hosting publicly"),
