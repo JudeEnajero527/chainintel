@@ -186,6 +186,9 @@ class RiskEngine:
             except Exception as e:      # stale/incompatible pickle — run train_model.py
                 log.warning("Could not load depeg model: %s", e)
         self.ml_status = "Online" if self.model else "Not trained — run train_model.py"
+        # e.g. "2026-10-24 22:44 UTC · price only" — stored with every logged forecast
+        self.model_version = (f"{self.model_meta.get('trained_at', '?')} · {self.model_meta.get('feature_set', '?')}"
+                              if self.model else None)
         self.init_db()
 
     # ── storage ────────────────────────────────────────────────────────────────
@@ -204,6 +207,9 @@ class RiskEngine:
                     level TEXT, outcome INTEGER, max_dev REAL, resolved_at TEXT,
                     PRIMARY KEY (date, ticker)
                 )""")
+            # Which model made each forecast (added Oct 2026; older rows stay NULL = not recorded).
+            if "model_version" not in db.columns(conn, "forecast_log"):
+                conn.execute("ALTER TABLE forecast_log ADD COLUMN model_version TEXT")
 
     def log_snapshot(self, ticker, price, liquidity, sentiment, total_risk, min_gap_minutes=5):
         """Record a reading at most once every `min_gap_minutes` per ticker."""
@@ -258,8 +264,9 @@ class RiskEngine:
                     continue
                 if conn.execute("SELECT 1 FROM forecast_log WHERE date=? AND ticker=?", (today, t)).fetchone():
                     continue
-                conn.execute("INSERT INTO forecast_log (date, ticker, probability, price, level) VALUES (?,?,?,?,?)",
-                             (today, t, ml["probability"], d["price"], ml["level"]))
+                conn.execute("INSERT INTO forecast_log (date, ticker, probability, price, level, model_version) "
+                             "VALUES (?,?,?,?,?,?)",
+                             (today, t, ml["probability"], d["price"], ml["level"], self.model_version))
                 added += 1
         return added
 

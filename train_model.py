@@ -4,11 +4,12 @@ ChainIntel — depeg forecasting model.
 Run:  python3 train_model.py
 Saves: chainintel_model.pkl, chainintel_model_meta.json (honest out-of-sample metrics the app displays)
 
-Data: DeFiLlama daily prices for ~230 USD stablecoins (2021 → today), including every coin that
+Data: DeFiLlama daily prices for every USD stablecoin it tracks (218 after exclusions in Oct 2026) (2021 → today), including every coin that
 has ever lost its peg — not just the big 9 — so the model sees hundreds of real depeg episodes.
 
 Evaluation is strictly time-based: train on the past, calibrate on the next slice, test on data the
-model has never seen. No shuffling, so no leakage from the future.
+model has never seen. No shuffling. Each label looks HORIZON_DAYS ahead, so the last HORIZON_DAYS
+forecast dates before every boundary are dropped ("purged"): no label in one period uses prices from the next.
 """
 import json
 import os
@@ -29,6 +30,16 @@ from depeg_model import (DEPEG_THRESHOLD, FEATURES, HORIZON_DAYS, MIN_HISTORY_DA
 HERE = os.path.dirname(os.path.abspath(__file__))
 TRAIN_END = pd.Timestamp("2024-07-01")   # train  < TRAIN_END
 CALIB_END = pd.Timestamp("2025-01-01")   # calibrate/validate [TRAIN_END, CALIB_END), test >= CALIB_END
+
+
+def purged_split(df: pd.DataFrame, horizon: int = HORIZON_DAYS):
+    """Train / validate / test, dropping the last `horizon` forecast dates before each boundary so a
+    row's outcome window (date+1 … date+horizon) never reaches into the next period."""
+    gap = pd.Timedelta(days=horizon)
+    train = df[df["date"] < TRAIN_END - gap]
+    calib = df[(df["date"] >= TRAIN_END) & (df["date"] < CALIB_END - gap)]
+    test  = df[df["date"] >= CALIB_END]
+    return train, calib, test
 ALERT_THRESHOLD = 0.20                   # probability at which the app shows "High Risk"
 LARGE_COIN_USD = 1e9                     # "large coin" = at least $1B in circulation on the day of the forecast
 MIN_EPISODES = 10                        # fewer separate depeg episodes than this → too few to score fairly
@@ -130,9 +141,7 @@ def main():
     print(f"  supply history for {supply['coin'].nunique()} coins")
 
     df = make_dataset(history, supply)
-    train = df[df["date"] < TRAIN_END]
-    calib = df[(df["date"] >= TRAIN_END) & (df["date"] < CALIB_END)]
-    test  = df[df["date"] >= CALIB_END]
+    train, calib, test = purged_split(df)
     for name, part in [("train", train), ("validate", calib), ("test", test)]:
         print(f"  {name:9s} {len(part):7,} rows · {int(part['label'].sum()):5,} depeg-ahead · "
               f"{part['label'].mean()*100:.2f}% positive")
@@ -161,6 +170,7 @@ def main():
         "test_rows":         int(len(test)),
         "test_positives":    int(y.sum()),
         "test_start":        f"{CALIB_END:%Y-%m-%d}",
+        "purge_days":        HORIZON_DAYS,
         "test_end":          f"{test['date'].max():%Y-%m-%d}",
         "variants":          {k: v["pr_auc"] for k, v in test_scores.items()},
         "large_coins":       evaluate_large(model, test, features, {m["gecko_id"]: m["symbol"] for m in meta_coins}),
@@ -181,7 +191,8 @@ def main():
     # ── Final model: same recipe, shifted forward to use all data ─────────────
     last = df["date"].max()
     final_calib_start = last - pd.Timedelta(days=183)
-    final = fit_calibrated(df[df["date"] < final_calib_start], df[df["date"] >= final_calib_start], features)
+    final_fit_end = final_calib_start - pd.Timedelta(days=HORIZON_DAYS)       # purge before the calibration window
+    final = fit_calibrated(df[df["date"] < final_fit_end], df[df["date"] >= final_calib_start], features)
 
     joblib.dump(final, os.path.join(HERE, "chainintel_model.pkl"))
     meta = {

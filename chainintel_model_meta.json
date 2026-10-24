@@ -1,5 +1,5 @@
 {
-  "trained_at": "2026-10-22 20:01 UTC",
+  "trained_at": "2026-10-24 22:44 UTC",
   "model": "Gradient-boosted trees (HistGradientBoosting) + isotonic calibration",
   "question": "Will a currently-pegged stablecoin trade \u22651% off peg within 7 days?",
   "horizon_days": 7,
@@ -16,37 +16,35 @@
     "dev_change_1d",
     "dev_change_7d",
     "offpeg_days_30d",
-    "history_days",
-    "supply_change_7d",
-    "supply_change_30d",
-    "log_supply"
+    "history_days"
   ],
-  "feature_set": "price + supply",
-  "coins": 218,
+  "feature_set": "price only",
+  "coins": 219,
   "excluded_yield_bearing": 4,
-  "training_rows": 93828,
+  "training_rows": 94067,
   "data_start": "2020-12-30",
-  "data_end": "2026-10-15",
+  "data_end": "2026-10-17",
   "metrics": {
-    "pr_auc": 0.595,
-    "roc_auc": 0.893,
-    "brier": 0.0625,
-    "precision_at_alert": 0.409,
-    "recall_at_alert": 0.764,
-    "pr_auc_baseline": 0.434,
-    "prevalence": 0.1075,
+    "pr_auc": 0.593,
+    "roc_auc": 0.885,
+    "brier": 0.0621,
+    "precision_at_alert": 0.416,
+    "recall_at_alert": 0.756,
+    "pr_auc_baseline": 0.435,
+    "prevalence": 0.1074,
     "alert_threshold": 0.2,
-    "test_rows": 55463,
-    "test_positives": 5961,
+    "test_rows": 55702,
+    "test_positives": 5982,
     "test_start": "2025-01-01",
-    "test_end": "2026-10-15",
+    "purge_days": 7,
+    "test_end": "2026-10-17",
     "variants": {
-      "price + supply": 0.595,
-      "price only": 0.599
+      "price + supply": 0.598,
+      "price only": 0.593
     },
     "large_coins": {
       "min_supply_usd": 1000000000.0,
-      "rows": 6923,
+      "rows": 6950,
       "coins": 17,
       "positives": 27,
       "prevalence": 0.0039,
@@ -62,7 +60,7 @@
           "coin": "FDUSD",
           "start": "2025-01-12",
           "end": "2025-01-18",
-          "warned": true
+          "warned": false
         },
         {
           "coin": "FDUSD",
@@ -81,19 +79,16 @@
     }
   },
   "importance": {
-    "vol_30d": 0.2613,
-    "offpeg_days_30d": 0.1404,
-    "max_abs_dev_7d": 0.0691,
-    "log_supply": 0.0444,
-    "vol_7d": 0.0398,
-    "max_abs_dev_30d": 0.0277,
-    "dev_change_1d": 0.009,
-    "history_days": 0.0037,
-    "abs_dev": 0.0003,
-    "dev_change_7d": 0.0001,
-    "mean_dev_7d": -0.0003,
-    "supply_change_30d": -0.001,
-    "supply_change_7d": -0.0018,
-    "dev": -0.0021
+    "vol_30d": 0.3049,
+    "offpeg_days_30d": 0.1428,
+    "max_abs_dev_7d": 0.0883,
+    "max_abs_dev_30d": 0.0502,
+    "vol_7d": 0.0219,
+    "dev_change_1d": 0.0108,
+    "abs_dev": 0.0054,
+    "dev": 0.0026,
+    "dev_change_7d": 0.0025,
+    "history_days": 0.0013,
+    "mean_dev_7d": -0.0027
   }
 }

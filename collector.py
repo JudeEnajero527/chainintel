@@ -7,7 +7,8 @@ Each pass:
   2. logs today's 7-day forecasts and scores the ones whose week has passed (Forecasts → track record)
   3. sends push alerts (email / Discord / Telegram) to users whose thresholds were crossed
   4. emails the daily digest once a day, at --digest-hour local time (default 8)
-  5. retrains the depeg model when it's older than --retrain-days (default 30)
+  5. retrains the depeg model when it's older than --retrain-days (default 30; use 0 to keep the
+     model frozen, e.g. during a live forward test), and reloads it if train_model.py was run by hand
 
 Usage:
     python3 collector.py                # one pass (for cron, launchd, or GitHub Actions)
@@ -97,7 +98,18 @@ def run_once(engine: RiskEngine, retrain_days: float, digest_hour: int = 8) -> R
              time.time() - started, scored, len(data), logged, resolved, sent, digest, summary)
     if retrain_days and retrain_if_stale(retrain_days):
         engine = RiskEngine()        # pick up the new model
+    elif _meta_trained_at() != engine.model_meta.get("trained_at"):
+        log.info("Model file changed on disk (retrained elsewhere) — reloading")
+        engine = RiskEngine()
     return engine
+
+
+def _meta_trained_at() -> str | None:
+    try:
+        with open(META_PATH) as fh:
+            return json.load(fh).get("trained_at")
+    except (OSError, ValueError):
+        return None
 
 
 def main():

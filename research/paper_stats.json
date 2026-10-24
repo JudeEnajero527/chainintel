@@ -1,0 +1,369 @@
+{
+  "generated_at": "2026-10-24 22:47 UTC",
+  "coins": 219,
+  "data_start": "2020-12-30",
+  "data_end": "2026-10-24",
+  "episodes_by_year": {
+    "2020": {
+      "episodes": 6,
+      "coins": 6,
+      "median_days": 3.0
+    },
+    "2021": {
+      "episodes": 381,
+      "coins": 25,
+      "median_days": 1.0
+    },
+    "2022": {
+      "episodes": 225,
+      "coins": 32,
+      "median_days": 2.0
+    },
+    "2023": {
+      "episodes": 573,
+      "coins": 61,
+      "median_days": 2.0
+    },
+    "2024": {
+      "episodes": 1105,
+      "coins": 83,
+      "median_days": 2.0
+    },
+    "2025": {
+      "episodes": 1215,
+      "coins": 114,
+      "median_days": 2.0
+    },
+    "2026": {
+      "episodes": 1009,
+      "coins": 125,
+      "median_days": 3.0
+    }
+  },
+  "episode_length_days": {
+    "p25": 1.0,
+    "median": 2.0,
+    "p75": 5.0,
+    "p90": 14.0
+  },
+  "coins_by_first_year": {
+    "2020": 17,
+    "2021": 9,
+    "2022": 16,
+    "2023": 25,
+    "2024": 33,
+    "2025": 71,
+    "2026": 48
+  },
+  "split_rows": {
+    "train": {
+      "rows": 30042,
+      "positives": 4827
+    },
+    "validate": {
+      "rows": 7706,
+      "positives": 1645
+    },
+    "test": {
+      "rows": 55702,
+      "positives": 5982
+    }
+  },
+  "feature_set": {
+    "chosen": "price only",
+    "validation_ap": {
+      "price only": 0.681,
+      "price + supply": 0.68
+    }
+  },
+  "main": {
+    "rows": 55702,
+    "positives": 5982,
+    "prevalence": 0.1074,
+    "pr_auc": 0.593,
+    "roc_auc": 0.885,
+    "brier": 0.0621,
+    "recall_at_alert": 0.756,
+    "precision_at_alert": 0.416
+  },
+  "calibration": [
+    {
+      "band": "0% to 2%",
+      "rows": 10050,
+      "mean_forecast": 0.0018,
+      "observed_rate": 0.0108
+    },
+    {
+      "band": "2% to 5%",
+      "rows": 14538,
+      "mean_forecast": 0.03,
+      "observed_rate": 0.0172
+    },
+    {
+      "band": "5% to 10%",
+      "rows": 12071,
+      "mean_forecast": 0.0622,
+      "observed_rate": 0.0386
+    },
+    {
+      "band": "10% to 20%",
+      "rows": 8174,
+      "mean_forecast": 0.1299,
+      "observed_rate": 0.0773
+    },
+    {
+      "band": "20% to 40%",
+      "rows": 5328,
+      "mean_forecast": 0.2575,
+      "observed_rate": 0.2048
+    },
+    {
+      "band": "40% to 100%",
+      "rows": 5541,
+      "mean_forecast": 0.6641,
+      "observed_rate": 0.6197
+    }
+  ],
+  "by_year": {
+    "2025": {
+      "rows": 26920,
+      "positives": 3527,
+      "prevalence": 0.131,
+      "pr_auc": 0.646,
+      "roc_auc": 0.9,
+      "brier": 0.0684,
+      "recall_at_alert": 0.812,
+      "precision_at_alert": 0.459
+    },
+    "2026": {
+      "rows": 28782,
+      "positives": 2455,
+      "prevalence": 0.0853,
+      "pr_auc": 0.514,
+      "roc_auc": 0.862,
+      "brier": 0.0562,
+      "recall_at_alert": 0.677,
+      "precision_at_alert": 0.359
+    }
+  },
+  "by_size": {
+    "under $10M": {
+      "rows": 19038,
+      "positives": 4384,
+      "prevalence": 0.2303,
+      "pr_auc": 0.682,
+      "roc_auc": 0.869,
+      "brier": 0.1122,
+      "recall_at_alert": 0.834,
+      "precision_at_alert": 0.501,
+      "coins": 100
+    },
+    "$10M to $100M": {
+      "rows": 17569,
+      "positives": 1272,
+      "prevalence": 0.0724,
+      "pr_auc": 0.419,
+      "roc_auc": 0.832,
+      "brier": 0.0535,
+      "recall_at_alert": 0.597,
+      "precision_at_alert": 0.315,
+      "coins": 88
+    },
+    "$100M to $1B": {
+      "rows": 12021,
+      "positives": 289,
+      "prevalence": 0.024,
+      "pr_auc": 0.177,
+      "roc_auc": 0.744,
+      "brier": 0.0257,
+      "recall_at_alert": 0.346,
+      "precision_at_alert": 0.125,
+      "coins": 53
+    },
+    "$1B and over": {
+      "rows": 6950,
+      "positives": 27,
+      "prevalence": 0.0039,
+      "pr_auc": 0.005,
+      "roc_auc": 0.637,
+      "brier": 0.0103,
+      "recall_at_alert": 0.0,
+      "precision_at_alert": 0.0,
+      "coins": 17
+    },
+    "supply unknown": {
+      "rows": 124,
+      "positives": 10,
+      "prevalence": 0.0806,
+      "pr_auc": 1.0,
+      "roc_auc": 1.0,
+      "brier": 0.0132,
+      "recall_at_alert": 1.0,
+      "precision_at_alert": 1.0,
+      "coins": 8
+    }
+  },
+  "episode_level": {
+    "test_episodes": 2224,
+    "warned_within_7d": 1452,
+    "share_warned": 0.653
+  },
+  "robustness": [
+    {
+      "threshold": 0.01,
+      "horizon_days": 1,
+      "rows": 56735,
+      "positives": 1513,
+      "prevalence": 0.0267,
+      "pr_auc": 0.261,
+      "roc_auc": 0.914,
+      "brier": 0.0218,
+      "recall_at_alert": 0.56,
+      "precision_at_alert": 0.26,
+      "pr_auc_baseline": 0.141
+    },
+    {
+      "threshold": 0.01,
+      "horizon_days": 3,
+      "rows": 56377,
+      "positives": 3530,
+      "prevalence": 0.0626,
+      "pr_auc": 0.472,
+      "roc_auc": 0.9,
+      "brier": 0.0421,
+      "recall_at_alert": 0.68,
+      "precision_at_alert": 0.371,
+      "pr_auc_baseline": 0.293
+    },
+    {
+      "threshold": 0.01,
+      "horizon_days": 7,
+      "rows": 55702,
+      "positives": 5982,
+      "prevalence": 0.1074,
+      "pr_auc": 0.593,
+      "roc_auc": 0.885,
+      "brier": 0.0621,
+      "recall_at_alert": 0.756,
+      "precision_at_alert": 0.416,
+      "pr_auc_baseline": 0.435
+    },
+    {
+      "threshold": 0.01,
+      "horizon_days": 14,
+      "rows": 54595,
+      "positives": 8539,
+      "prevalence": 0.1564,
+      "pr_auc": 0.644,
+      "roc_auc": 0.874,
+      "brier": 0.0864,
+      "recall_at_alert": 0.756,
+      "precision_at_alert": 0.469,
+      "pr_auc_baseline": 0.541
+    },
+    {
+      "threshold": 0.02,
+      "horizon_days": 1,
+      "rows": 56735,
+      "positives": 512,
+      "prevalence": 0.009,
+      "pr_auc": 0.125,
+      "roc_auc": 0.861,
+      "brier": 0.0083,
+      "recall_at_alert": 0.0,
+      "precision_at_alert": null,
+      "pr_auc_baseline": 0.069
+    },
+    {
+      "threshold": 0.02,
+      "horizon_days": 3,
+      "rows": 56377,
+      "positives": 1365,
+      "prevalence": 0.0242,
+      "pr_auc": 0.262,
+      "roc_auc": 0.868,
+      "brier": 0.0202,
+      "recall_at_alert": 0.441,
+      "precision_at_alert": 0.3,
+      "pr_auc_baseline": 0.153
+    },
+    {
+      "threshold": 0.02,
+      "horizon_days": 7,
+      "rows": 55702,
+      "positives": 2600,
+      "prevalence": 0.0467,
+      "pr_auc": 0.348,
+      "roc_auc": 0.85,
+      "brier": 0.0359,
+      "recall_at_alert": 0.582,
+      "precision_at_alert": 0.31,
+      "pr_auc_baseline": 0.25
+    },
+    {
+      "threshold": 0.02,
+      "horizon_days": 14,
+      "rows": 54595,
+      "positives": 4153,
+      "prevalence": 0.0761,
+      "pr_auc": 0.377,
+      "roc_auc": 0.814,
+      "brier": 0.0603,
+      "recall_at_alert": 0.621,
+      "precision_at_alert": 0.287,
+      "pr_auc_baseline": 0.339
+    },
+    {
+      "threshold": 0.03,
+      "horizon_days": 1,
+      "rows": 56735,
+      "positives": 289,
+      "prevalence": 0.0051,
+      "pr_auc": 0.075,
+      "roc_auc": 0.798,
+      "brier": 0.0048,
+      "recall_at_alert": 0.0,
+      "precision_at_alert": null,
+      "pr_auc_baseline": 0.045
+    },
+    {
+      "threshold": 0.03,
+      "horizon_days": 3,
+      "rows": 56377,
+      "positives": 772,
+      "prevalence": 0.0137,
+      "pr_auc": 0.146,
+      "roc_auc": 0.83,
+      "brier": 0.0124,
+      "recall_at_alert": 0.075,
+      "precision_at_alert": 0.337,
+      "pr_auc_baseline": 0.095
+    },
+    {
+      "threshold": 0.03,
+      "horizon_days": 7,
+      "rows": 55702,
+      "positives": 1568,
+      "prevalence": 0.0281,
+      "pr_auc": 0.216,
+      "roc_auc": 0.825,
+      "brier": 0.0242,
+      "recall_at_alert": 0.321,
+      "precision_at_alert": 0.285,
+      "pr_auc_baseline": 0.163
+    },
+    {
+      "threshold": 0.03,
+      "horizon_days": 14,
+      "rows": 54595,
+      "positives": 2664,
+      "prevalence": 0.0488,
+      "pr_auc": 0.243,
+      "roc_auc": 0.791,
+      "brier": 0.0412,
+      "recall_at_alert": 0.378,
+      "precision_at_alert": 0.299,
+      "pr_auc_baseline": 0.235
+    }
+  ]
+}

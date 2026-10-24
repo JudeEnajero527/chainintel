@@ -546,7 +546,7 @@ LEFT_PANEL_TEMPLATE = """
 </div>
 <div class="auth-stats">
   <div><div class="auth-stat-num">9</div><div class="auth-stat-label">Stablecoins<br>monitored</div></div>
-  <div><div class="auth-stat-num">230</div><div class="auth-stat-label">Coins in model<br>training data</div></div>
+  <div><div class="auth-stat-num">218</div><div class="auth-stat-label">Coins in model<br>training data</div></div>
   <div><div class="auth-stat-num">7-day</div><div class="auth-stat-label">Depeg<br>forecast</div></div>
 </div>
 <div class="auth-feature"><div class="auth-feature-icon">📡</div><div>
