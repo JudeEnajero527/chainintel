@@ -149,9 +149,9 @@ with right:
     for date, coin, low, cause in EVENTS:
         st.markdown(f"""
         <div class="card-sm" style="display:flex;gap:14px;align-items:baseline;">
-          <div style="width:44px;font-weight:800;color:var(--text);">{coin}</div>
-          <div style="width:58px;font-weight:800;color:var(--red);">{low}</div>
-          <div style="flex:1;font-size:12.5px;color:var(--text-2);line-height:1.45;">{cause}
+          <div style="flex:0 0 52px;white-space:nowrap;font-weight:800;color:var(--text);">{coin}</div>
+          <div style="flex:0 0 64px;white-space:nowrap;font-weight:800;color:var(--red);">{low}</div>
+          <div style="flex:1;min-width:0;font-size:12.5px;color:var(--text-2);line-height:1.45;">{cause}
             <div class="note">{date}</div></div>
         </div>""", unsafe_allow_html=True)
 
