@@ -155,5 +155,8 @@ with right:
             <div class="note">{date}</div></div>
         </div>""", unsafe_allow_html=True)
 
+import usage  # noqa: E402
+usage.render_feedback_form()
+
 st.markdown('<div class="footer-note">Data: CoinGecko · DefiLlama · DexScreener · Google News · Etherscan · '
             'FinBERT sentiment · Not financial advice</div>', unsafe_allow_html=True)

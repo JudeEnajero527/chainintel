@@ -546,7 +546,7 @@ LEFT_PANEL_TEMPLATE = """
 </div>
 <div class="auth-stats">
   <div><div class="auth-stat-num">9</div><div class="auth-stat-label">Stablecoins<br>monitored</div></div>
-  <div><div class="auth-stat-num">218</div><div class="auth-stat-label">Coins in model<br>training data</div></div>
+  <div><div class="auth-stat-num">{N_COINS}</div><div class="auth-stat-label">Coins in model<br>training data</div></div>
   <div><div class="auth-stat-num">7-day</div><div class="auth-stat-label">Depeg<br>forecast</div></div>
 </div>
 <div class="auth-feature"><div class="auth-feature-icon">📡</div><div>
@@ -573,7 +573,14 @@ _MARKETS_CARD = """<div class="auth-feature"><div class="auth-feature-icon">🌍
 
 def _left_panel() -> str:
     import config
-    return LEFT_PANEL_TEMPLATE.replace("{FEATURE_3}", _WHALE_CARD if config.show_signals() else _MARKETS_CARD)
+    try:                                   # coin count comes from the trained model, so it never goes stale
+        from chainintel_core import META_PATH
+        with open(META_PATH) as fh:
+            n_coins = str(json.load(fh).get("coins", "200+"))
+    except (OSError, ValueError, ImportError):
+        n_coins = "200+"
+    return (LEFT_PANEL_TEMPLATE.replace("{FEATURE_3}", _WHALE_CARD if config.show_signals() else _MARKETS_CARD)
+            .replace("{N_COINS}", n_coins))
 
 
 def _centered_message(kind: str, text: str):
@@ -653,8 +660,16 @@ def _handle_email_links():
         st.stop()
 
 
-def render_auth_wall() -> bool:
-    """Shows the sign-in / sign-up screen. Returns True once the user is authenticated."""
+def show_sign_in():
+    """Open the sign-in / sign-up screen (accounts are optional; this is how visitors reach it)."""
+    st.session_state["_show_auth"] = True
+
+
+def render_auth_wall(optional: bool = False) -> bool:
+    """Shows the sign-in / sign-up screen. Returns True once the user is authenticated.
+
+    With optional=True, visitors can use the site without an account: the screen only appears after they
+    ask for it (show_sign_in()), and it offers a way back."""
     if not st.session_state.get("_user_db_ready"):
         init_user_db()
         st.session_state["_user_db_ready"] = True
@@ -664,7 +679,10 @@ def render_auth_wall() -> bool:
         _handle_legal_pages()            # signed-in users reach these through the sidebar instead
     if is_logged_in():
         st.session_state.pop("_signed_out", None)
+        st.session_state.pop("_show_auth", None)
         return True
+    if optional and not st.session_state.get("_show_auth"):
+        return True                      # browsing without an account
     apply_cookie_action()
 
     st.markdown(AUTH_CSS, unsafe_allow_html=True)
@@ -676,6 +694,11 @@ def render_auth_wall() -> bool:
 
     with right:
         st.markdown('<div class="auth-logo" style="margin-bottom:28px;">⬡ Chain<span>Intel</span></div>', unsafe_allow_html=True)
+        if optional:
+            if st.button("← Continue without an account", type="tertiary", key="auth_back"):
+                st.session_state.pop("_show_auth", None)
+                st.rerun()
+            st.caption("An account is only needed for saved alerts and the daily email digest.")
         mode = st.radio("Mode", ["Sign in", "Create account"], horizontal=True, label_visibility="collapsed", key="auth_tab")
 
         if mode == "Sign in":

@@ -131,8 +131,9 @@ def privacy_markdown() -> str:
 *Effective {EFFECTIVE_DATE}*
 
 This policy explains what ChainIntel collects, why, who it's shared with, and the choices you have.
-The short version: **we collect only what's needed to run your account and send you the alerts you ask for.
-We don't sell your data, show ads, or use tracking or analytics cookies.**
+The short version: **you can use ChainIntel without an account. We collect only what's needed to run accounts
+for people who want alerts, plus anonymous visit counts. We don't sell your data, show ads, or use tracking or
+analytics cookies.**
 
 ## What we collect
 
@@ -152,6 +153,15 @@ We don't sell your data, show ads, or use tracking or analytics cookies.**
 - If you choose "Keep me signed in", your browser stores a cookie named `chainintel_session` containing a random
   token, for up to 30 days. We store only a hash of that token. Signing out deletes it. This is the only cookie
   ChainIntel sets; the hosting platform may use strictly necessary technical cookies of its own.
+
+**Anonymous visit counts**
+- To know how much ChainIntel is used, we count page views per day. Each count stores only the date, the page
+  name, whether the visitor was signed in, and a random ID that lasts for one browser session. It sets no cookie
+  and stores no IP address, browser details or anything that identifies you.
+
+**Optional feedback form**
+- If you fill in "How are you using ChainIntel?", we store what you write and, only if you give it, a way to
+  contact you. Leave the contact field blank to stay anonymous.
 
 **One-time links**
 - Password-reset and email-confirmation links contain random tokens, stored as hashes, that expire after

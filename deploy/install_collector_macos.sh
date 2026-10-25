@@ -8,7 +8,7 @@ set -euo pipefail
 LABEL="com.chainintel.collector"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 PROJECT="$(cd "$(dirname "$0")/.." && pwd)"
-PYTHON="$(command -v python3)"
+PYTHON="${PYTHON:-$(command -v python3)}"      # override: PYTHON=/path/to/python3 bash deploy/install_collector_macos.sh
 LOG="$PROJECT/collector.log"
 RETRAIN_DAYS="${RETRAIN_DAYS:-30}"
 
@@ -18,6 +18,18 @@ if [[ "${1:-}" == "uninstall" ]]; then
   echo "Collector stopped and removed."
   exit 0
 fi
+
+# Refuse to install with a Python that can't run the collector (e.g. another project's virtualenv).
+if [[ -n "${VIRTUAL_ENV:-}" && "$PYTHON" == "$VIRTUAL_ENV"* ]]; then
+  echo "Note: a virtualenv is active ($VIRTUAL_ENV); the collector would run with its Python."
+fi
+if ! (cd "$PROJECT" && "$PYTHON" -c "import collector" 2>/dev/null); then
+  echo "Error: $PYTHON is missing ChainIntel's packages, so the collector would crash on start."
+  echo "Run 'deactivate' if a virtualenv is active, or choose a Python explicitly:"
+  echo "  PYTHON=/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 RETRAIN_DAYS=0 bash deploy/install_collector_macos.sh"
+  exit 1
+fi
+echo "Using $PYTHON"
 
 mkdir -p "$HOME/Library/LaunchAgents"
 cat > "$PLIST" <<PLIST

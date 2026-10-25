@@ -2,8 +2,11 @@
 # so the deployed app picks it up on its next restart.
 name: retrain
 on:
-  schedule:
-    - cron: "0 6 1 * *"
+  # Monthly schedule switched OFF while the live forward test runs on the frozen model described in the
+  # paper (trained 2026-10-24, SHA-256 prefix 85d7c9fc4dce). Run it by hand from the Actions tab when you
+  # deliberately want a new model version. To re-enable, restore:
+  #   schedule:
+  #     - cron: "0 6 1 * *"
   workflow_dispatch:
 
 permissions:

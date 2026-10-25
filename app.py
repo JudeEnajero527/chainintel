@@ -18,7 +18,8 @@ if __name__ == "__main__" and not st.runtime.exists():
     sys.exit(stcli.main())
 
 import config
-from auth import apply_cookie_action, get_current_user, logout, render_auth_wall
+import usage
+from auth import apply_cookie_action, get_current_user, logout, render_auth_wall, show_sign_in
 from styles import BASE_CSS, esc
 from ui import get_engine
 
@@ -28,7 +29,7 @@ st.set_page_config(page_title="ChainIntel", page_icon=os.path.join(HERE, "assets
                    layout="wide", initial_sidebar_state="auto")
 st.markdown(BASE_CSS, unsafe_allow_html=True)
 
-if not render_auth_wall():
+if not render_auth_wall(optional=True):     # accounts are optional; the site is open
     st.stop()
 
 st.logo(os.path.join(HERE, "assets", "logo.svg"), icon_image=os.path.join(HERE, "assets", "icon.svg"), size="large")
@@ -68,6 +69,7 @@ PRIVACY = view("privacy.py", "Privacy Policy", "shield", url_path="privacy")
 # Streamlit's built-in menu can't hide individual pages, so it's turned off and drawn below.
 nav = st.navigation([p for pages in SECTIONS.values() for p in pages] + [TERMS, PRIVACY], position="hidden")
 st.session_state["_page"] = nav.url_path or "home"
+usage.record_view(st.session_state["_page"])      # anonymous visit count (no cookies, no IP)
 
 engine = get_engine()
 user = get_current_user()
@@ -81,15 +83,20 @@ with st.sidebar:
                     st.page_link(page, icon=page.icon)
 
     with st.container(key="sidebar_account"):
-        who, out = st.columns([3, 2], vertical_alignment="center", gap="small")
-        who.markdown(
-            f'<div class="account"><span class="avatar">{esc(user["username"][:1].upper())}</span>'
-            f'<span class="account-name">{esc(user["username"])}</span></div>',
-            unsafe_allow_html=True,
-        )
-        if out.button("Sign out", icon=":material/logout:", type="tertiary", key="sidebar_logout"):
-            logout()
-            st.rerun()
+        if user:
+            who, out = st.columns([3, 2], vertical_alignment="center", gap="small")
+            who.markdown(
+                f'<div class="account"><span class="avatar">{esc(user["username"][:1].upper())}</span>'
+                f'<span class="account-name">{esc(user["username"])}</span></div>',
+                unsafe_allow_html=True,
+            )
+            if out.button("Sign out", icon=":material/logout:", type="tertiary", key="sidebar_logout"):
+                logout()
+                st.rerun()
+        else:
+            if st.button("Sign in for alerts", icon=":material/login:", type="tertiary", key="sidebar_login"):
+                show_sign_in()
+                st.rerun()
     status_slot = st.empty()
 
 

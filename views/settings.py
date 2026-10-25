@@ -8,12 +8,20 @@ import mailer
 import notify
 from alerts import render_alert_settings
 from auth import (change_password, delete_account, get_current_user, get_user, load_notify_prefs, logout,
-                  save_notify_prefs, send_verification_email, set_digest_opt_in)
+                  save_notify_prefs, send_verification_email, set_digest_opt_in, show_sign_in)
 from styles import esc, section
 from ui import get_engine, header
 
 engine = get_engine()
 user = get_current_user()
+if not user:
+    header("Settings", "Alerts and the daily digest need a free account")
+    st.info("Everything else on ChainIntel is open without an account. Sign in or create one to save alert "
+            "thresholds and get the daily risk digest by email.")
+    if st.button("Sign in or create an account", icon=":material/login:"):
+        show_sign_in()
+        st.rerun()
+    st.stop()
 user.update({k: v for k, v in (get_user(user["id"]) or {}).items() if k in ("email_verified", "digest_opt_in")})
 header("Settings", f"Account, alerts and data sources for {esc(user['username'])}")
 

@@ -15,14 +15,15 @@ sys.path.insert(0, ROOT)
 import db                     # noqa: E402
 import depeg_model as dm      # noqa: E402
 
-ALERT = 0.20
+ALERT = 0.20      # as a fraction; the log stores probabilities in percent (0–100)
 
 
 def main():
     with db.connect() as conn:
         cols = db.columns(conn, "forecast_log")
         version = "model_version" if "model_version" in cols else "NULL"
-        rows = conn.execute(f"SELECT date, ticker, probability, outcome, {version} FROM forecast_log ORDER BY date").fetchall()
+        raw = conn.execute(f"SELECT date, ticker, probability, outcome, {version} FROM forecast_log ORDER BY date").fetchall()
+    rows = [(d, t, None if p is None else p / 100, o, v) for d, t, p, o, v in raw]
     if not rows:
         print("No forecasts logged yet.")
         return

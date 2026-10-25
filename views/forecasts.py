@@ -67,25 +67,26 @@ st.markdown(f"""
   <strong style="color:#f1f5f9;">Trained on:</strong> {meta['coins']} USD stablecoins, {meta['data_start']} → {meta['data_end']}
   ({meta['training_rows']:,} coin-days), including every coin DefiLlama tracks — not only the nine above — so the model has seen
   hundreds of real depeg episodes.<br>
-  <strong style="color:#f1f5f9;">Tested on:</strong> {m['test_start']} → {m['test_end']} — data the model never saw during training
-  ({m['test_rows']:,} coin-days, {m['test_positives']:,} of which were followed by a depeg).
+  <strong style="color:#f1f5f9;">Tested on:</strong> {m['test_start']} → {m['test_end']} ({m['test_rows']:,} coin-days,
+  {m['test_positives']:,} of which were followed by a depeg). The scores below come from a version trained and calibrated
+  only on data before 2025, so the test period was never seen. The live model is then refitted on all data.
 </div>""", unsafe_allow_html=True)
 
 k1, k2, k3, k4 = st.columns(4)
 with k1:
-    st.markdown(card("PR-AUC (main score)", f"{m['pr_auc']:.2f}",
+    st.markdown(card("Average precision (main score)", f"{m['pr_auc']:.2f}",
                      f"Naive rule: {m['pr_auc_baseline']:.2f} · random guess: {m['prevalence']:.2f}", color="#a78bfa"),
                 unsafe_allow_html=True)
 with k2:
-    st.markdown(card("Depegs caught", f"{m['recall_at_alert']*100:.0f}%",
-                     f"of real depegs got a ≥{m['alert_threshold']*100:.0f}% warning beforehand", color="#22c55e"),
+    st.markdown(card("Depeg days flagged", f"{m['recall_at_alert']*100:.0f}%",
+                     f"of forecast days followed by a depeg had a ≥{m['alert_threshold']*100:.0f}% warning", color="#22c55e"),
                 unsafe_allow_html=True)
 with k3:
     st.markdown(card("Warnings that were right", f"{m['precision_at_alert']*100:.0f}%",
                      f"of ≥{m['alert_threshold']*100:.0f}% warnings were followed by a depeg", color="#f59e0b"),
                 unsafe_allow_html=True)
 with k4:
-    st.markdown(card("ROC-AUC", f"{m['roc_auc']:.2f}", f"Brier score {m['brier']:.3f} (probabilities are calibrated)"),
+    st.markdown(card("ROC-AUC", f"{m['roc_auc']:.2f}", f"Brier score {m['brier']:.3f} · forecasts rank risk well but run high"),
                 unsafe_allow_html=True)
 
 variants = m.get("variants")
@@ -118,7 +119,7 @@ elif large:
         f'period{detail}. That\'s too few to score the model fairly on large coins (at least {large.get("min_episodes", 10)} '
         'are needed), so no accuracy figure is shown for this group.</div>',
         unsafe_allow_html=True)
-st.markdown('<div class="note">PR-AUC is the honest headline number for rare events: it measures how well the model ranks '
+st.markdown('<div class="note">Average precision (also called PR-AUC) is the honest headline number for rare events: it measures how well the model ranks '
             'coins that will depeg above those that won\'t, and doesn\'t get inflated by the many calm days. '
             f'Retrain any time with <code>python3 train_model.py</code> (last trained {esc(meta["trained_at"])}).</div>',
             unsafe_allow_html=True)
