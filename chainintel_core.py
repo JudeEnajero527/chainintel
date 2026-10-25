@@ -301,14 +301,33 @@ class RiskEngine:
     # ── prices ─────────────────────────────────────────────────────────────────
     @ttl_cache(60)
     def get_all_prices(self) -> dict:
-        """{ticker: price or None} from CoinGecko, one request."""
+        """{ticker: price or None}. CoinGecko first; DefiLlama live prices, then DefiLlama's latest
+        daily price, fill any coin CoinGecko misses (it often rate-limits shared cloud servers)."""
+        prices = {t: None for t in ASSETS}
+        ids = ",".join(a["coingecko_id"] for a in ASSETS.values())
         try:
-            ids = ",".join(a["coingecko_id"] for a in ASSETS.values())
             data = _get("https://api.coingecko.com/api/v3/simple/price", ids=ids, vs_currencies="usd").json()
-            return {t: data.get(c["coingecko_id"], {}).get("usd") for t, c in ASSETS.items()}
-        except FETCH_ERRORS as e:
+            prices.update({t: data.get(c["coingecko_id"], {}).get("usd") for t, c in ASSETS.items()})
+        except (*FETCH_ERRORS, AttributeError) as e:
             log.warning("CoinGecko prices failed: %s", e)
-            return {t: None for t in ASSETS}
+        missing = [t for t, v in prices.items() if v is None]
+        if missing:
+            try:
+                keys = ",".join(f"coingecko:{ASSETS[t]['coingecko_id']}" for t in missing)
+                coins = _get(f"https://coins.llama.fi/prices/current/{keys}").json().get("coins", {})
+                for t in missing:
+                    prices[t] = coins.get(f"coingecko:{ASSETS[t]['coingecko_id']}", {}).get("price")
+            except (*FETCH_ERRORS, AttributeError) as e:
+                log.warning("DefiLlama live prices failed: %s", e)
+        missing = [t for t, v in prices.items() if v is None]
+        if missing:
+            hist = self._llama_history()
+            if hist is not None and not hist.empty:
+                for t in missing:
+                    rows = hist[hist["coin"] == ASSETS[t]["coingecko_id"]]
+                    if not rows.empty:
+                        prices[t] = float(rows.sort_values("date")["price"].iloc[-1])
+        return prices
 
     def get_price(self, ticker):
         return self.get_all_prices().get(ticker)
