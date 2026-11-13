@@ -1,0 +1,46 @@
+# Opens chainintel.streamlit.app in a real (headless) browser every 6 hours,
+# and clicks the wake-up button if the app has gone to sleep.
+
+name: Keep ChainIntel awake
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"   # every 6 hours (GitHub runs this on UTC time)
+  workflow_dispatch:         # lets you also run it manually from the Actions tab
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Visit the app and wake it if asleep
+        run: |
+          python - <<'EOF'
+          from playwright.sync_api import sync_playwright
+
+          URL = "https://chainintel.streamlit.app/"
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              page = browser.new_page()
+              page.goto(URL, wait_until="networkidle", timeout=90000)
+
+              wake_button = page.get_by_role("button", name="Yes, get this app back up!")
+              if wake_button.count() > 0:
+                  wake_button.click()
+                  print("App was asleep - clicked wake button")
+                  page.wait_for_timeout(90000)  # give it time to boot
+              else:
+                  print("App already awake")
+                  page.wait_for_timeout(15000)  # stay briefly so the visit registers
+
+              browser.close()
+          EOF
