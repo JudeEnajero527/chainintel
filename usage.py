@@ -28,9 +28,23 @@ def _init():
     st.session_state[_READY] = True
 
 
+_BOT_MARKERS = ("chainintel-keepawake", "headlesschrome", "bot", "crawler", "spider")
+
+
+def _is_bot() -> bool:
+    """Automated visits (the keep-awake GitHub Action, search crawlers) shouldn't count as visitors."""
+    try:
+        ua = (st.context.headers.get("User-Agent") or "").lower()
+    except Exception:
+        return False
+    return any(m in ua for m in _BOT_MARKERS)
+
+
 def record_view(page: str):
     """Count one view of `page` today for this browser session (repeat views the same day count once)."""
     try:
+        if _is_bot():
+            return
         _init()
         visitor = st.session_state.setdefault("_visitor_id", uuid.uuid4().hex)
         day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
