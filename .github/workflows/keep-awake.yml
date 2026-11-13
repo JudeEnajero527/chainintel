@@ -30,7 +30,7 @@ jobs:
 
           with sync_playwright() as p:
               browser = p.chromium.launch()
-              page = browser.new_page()
+              page = browser.new_page(user_agent="ChainIntel-keepawake (GitHub Actions)")
               page.goto(URL, wait_until="networkidle", timeout=90000)
 
               wake_button = page.get_by_role("button", name="Yes, get this app back up!")
