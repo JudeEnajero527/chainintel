@@ -77,9 +77,11 @@ with right:
                         unsafe_allow_html=True)
         else:
             st.markdown('<div class="note">Fear &amp; Greed history unavailable.</div>', unsafe_allow_html=True)
-        gas_txt = f"{gas['propose']:.2f} gwei (safe {gas['safe']:.2f} · fast {gas['fast']:.2f})" if gas else "needs ETHERSCAN_API_KEY"
-        st.markdown(f'<div class="note" style="margin-top:8px;">Ethereum gas: <strong style="color:#f1f5f9;">{gas_txt}</strong></div>',
-                    unsafe_allow_html=True)
+        # Only show gas when Etherscan returned data; hide the line otherwise.
+        if gas:
+            gas_txt = f"{gas['propose']:.2f} gwei (safe {gas['safe']:.2f} · fast {gas['fast']:.2f})"
+            st.markdown(f'<div class="note" style="margin-top:8px;">Ethereum gas: <strong style="color:#f1f5f9;">{gas_txt}</strong></div>',
+                        unsafe_allow_html=True)
 
 st.markdown(section("Leaderboard"), unsafe_allow_html=True)
 df = pd.DataFrame([{
@@ -100,5 +102,6 @@ st.dataframe(
     },
 )
 st.caption("Blank cells = no price available. Yield-bearing tokens accrue interest, so they trade above $1 by design and aren't counted as off peg.")
-st.markdown('<div class="footer-note">Data: DefiLlama · alternative.me · Etherscan · refreshes every 10 minutes</div>',
+_sources = "DefiLlama · alternative.me" + (" · Etherscan" if gas else "")
+st.markdown(f'<div class="footer-note">Data: {_sources} · refreshes every 10 minutes</div>',
             unsafe_allow_html=True)
